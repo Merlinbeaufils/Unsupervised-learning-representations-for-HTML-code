@@ -20,5 +20,24 @@ exploring are a next webpage predictor given a current browsing sequence and a c
 of a user clicking on a website if shown after a search, similar to a ranking algorithm.
 
 ### Data
-repository of html files from somewhere
+repository html_files of html files from somewhere
+also common_files the 10 most used websites
 
+
+## Analysis of tags, attributes and content
+#### Build files and word count
+Use frequency.buildfiles to build the text files of tags, attributes and data.
+
+You can then make a word count dictionary of each of these using
+word_count('tag_file.txt','tag_file_pickled') for example and it will pickle
+the dictionary into the file so you can then delete the word files and keep only the counts
+
+#### Analyze
+use frequency.analyze to analyze the results. if the pickled file is already 
+built, specify pikl=1. Also specify a frequency floor to be sisplayed and the scale.
+
+
+
+### Traversal
+used this algorithm to traverse tree bottom up
+https://www.geeksforgeeks.org/bottom-up-traversal-of-a-trie/

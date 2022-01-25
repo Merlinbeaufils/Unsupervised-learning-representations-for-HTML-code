@@ -21,7 +21,7 @@ class MyHTMLParser(HTMLParser):
             node.depth = len(self.node_stack)
             father.children.append(node)
             self.node_stack.append(node)
-
+        #self.tree.total_children += 1
         # print("Start tag:", tag)
         # for attr in attrs:
             # print("     attr:", attr)
@@ -77,6 +77,9 @@ class HtmlNode:
         self.data = ""
         self.depth = 0
         self.sim_string = 1
+        #self.total_children = 0
+        #self.next = [None for x in range(self.total_children)]
+        #self.leaf = False
 
     def __getitem__(self, tag):
         return getattr(self, tag)
@@ -105,11 +108,10 @@ class HtmlNode:
             return self.tag
 
 
-def str_to_tree(string: str) -> HtmlNode:
-    x = MyHTMLParser()
+def parse_string(string: str, parser: HTMLParser) -> HtmlNode:
+    x = parser
     x.feed(string)
-    return x.tree
-
+    return x
 
 def dir_to_str(directory: str) -> [str]:
     strings = []
