@@ -3,33 +3,47 @@ import os
 # from html.entities import name2codepoint
 import codecs
 
+void_tags = ["area", "base", "br", "col", "command", "embed", "hr", "img", "input", "keygen", "link", "meta", "param",
+             "source", "track", "wbr"]
+
 
 class MyHTMLParser(HTMLParser):
     def __init__(self):
         super().__init__()
-        self.tree = HtmlNode("root", [], None, [])
-        self.node_stack = [self.tree]
+        # addressing omittable start tags
+        self.head = HtmlNode("head", [], None, [], depth=1, child_index=0)
+        self.body = HtmlNode("body", [], None, [], depth=1, child_index=1)
+        self.tree = HtmlNode("html", [], None, [self.head, self.body])
+        self.head.father = self.body.father = self
+        self.node_stack = [self.tree, self.head]
 
     def handle_starttag(self, tag, attrs):
-        if tag == "html":
-            self.tree = HtmlNode(tag=tag, attrs=attrs, father=None, children=[])
-            self.tree.depth = 0
-            self.node_stack = [self.tree]
-        else:
+        if tag.lower() not in ["html", "head", "body"]:
             father = self.node_stack[-1]
-            node = HtmlNode(tag=tag, attrs=attrs, father=father, children=[])
+            node = HtmlNode(tag=tag.lower(), attrs=attrs, father=father, children=[])
             node.depth = len(self.node_stack)
             father.children.append(node)
+            node.child_index = len(father.children)
             self.node_stack.append(node)
-        #self.tree.total_children += 1
-        # print("Start tag:", tag)
-        # for attr in attrs:
-            # print("     attr:", attr)
+        elif tag.lower() == "body":
+            self.node_stack.append(self.body)
+
+        if tag in void_tags:
+            self.node_stack.pop()
 
     def handle_endtag(self, tag):
-        node = self.node_stack.pop()
-        node.active = False
+        if tag == self.node_stack[-1].tag:
+            self.node_stack.pop()
+        else:
+            print("fuck")
+        return
         # print("End tag  :", tag)
+
+    def handle_startendtag(self, tag: str, attrs: list) -> None:
+        self.handle_starttag(tag, attrs)
+        if tag not in void_tags:
+            self.handle_endtag(tag)
+        return
 
     def handle_data(self, data):
         data = data.strip()
@@ -64,7 +78,7 @@ class MyHTMLParser(HTMLParser):
 
 
 class HtmlNode:
-    def __init__(self, tag="", attrs=None, father=None, children=None):
+    def __init__(self, tag="", attrs=None, father=None, children=None, depth=0, child_index=0, mask_val=0):
         if children is None:
             children = []
         if attrs is None:
@@ -73,13 +87,15 @@ class HtmlNode:
         self.children = children
         self.tag = tag
         self.attrs = attrs
-        self.active = True
         self.data = ""
-        self.depth = 0
+        self.depth = depth
         self.sim_string = 1
-        #self.total_children = 0
-        #self.next = [None for x in range(self.total_children)]
-        #self.leaf = False
+        self.path = []
+        self.child_index = child_index
+        self.mask_val = mask_val
+        # self.total_children = 0
+        # self.next = [None for x in range(self.total_children)]
+        # self.leaf = False
 
     def __getitem__(self, tag):
         return getattr(self, tag)
@@ -98,6 +114,9 @@ class HtmlNode:
             return indent + "Node: %s, attrs: %s, data: %s,  depth: %s %s" % (
                 self.tag, self.attrs, self.data, self.depth, children_str)
 
+    def __bool__(self):
+        return bool(self.children)
+
     def show(self) -> str:
         # Recursively build up the full string
         if self.children:
@@ -107,11 +126,34 @@ class HtmlNode:
         else:
             return self.tag
 
+    def build_path(self):
+        path = []
+        if not self.children:
+            self.path = [self]
+            return self.path
+        else:
+            for child in self.children:
+                path += child.build_path()
+            if self.tag != "html":
+                path += [self]
+            self.path = path
+            return self.path
 
-def parse_string(string: str, parser: HTMLParser) -> HtmlNode:
+    def mask(self, tree_path_index):
+        x = HtmlNode('random')
+        node = self.path[tree_path_index]
+        node.father.children[node.child_index] = HtmlNode("mask", mask_val=1)
+
+
+
+def parse_string(string: str, parser=None):
+    if parser is None:
+        parser = MyHTMLParser()
     x = parser
     x.feed(string)
+    x.tree.build_path()
     return x
+
 
 def dir_to_str(directory: str) -> [str]:
     strings = []
@@ -123,3 +165,8 @@ def dir_to_str(directory: str) -> [str]:
             file = codecs.open(f, "r", "utf-8")
             strings.append(file.read())
     return strings
+
+
+html = dir_to_str('./random')[0]
+html_node = parse_string(html, MyHTMLParser()).tree
+print()

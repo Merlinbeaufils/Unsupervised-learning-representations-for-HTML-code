@@ -2,9 +2,9 @@ import parsing
 
 
 def main(directory: str):
-    directory = directory
     strings = parsing.dir_to_str(directory)
     trees = [parsing.parse_string(x, parsing.MyHTMLParser()).tree for x in strings]
+
     return trees
 
 

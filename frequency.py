@@ -1,9 +1,11 @@
+from parsing import *
 from html.parser import HTMLParser
-import codecs
-import os
-import parsing
+# import codecs
+# import os
 import seaborn as sns
+import parsing
 import pickle
+
 
 class FreqParser(HTMLParser):
     def __init__(self, tf, af, df):
@@ -80,7 +82,6 @@ def analyze_results(file_in, file_out, pikl=0, floor=0, scale='linear'):
     fig.savefig(file_out)
 
 
-
 # analyze_results(path + 'tag_file.txt', path + 'plots/tag_count.png', pikl=1, floor=2, scale='log')
 # analyze_results(path + 'attrs_file.txt', path + 'plots/attrs_count.png')
 # analyze_results(path + 'data_file.txt', path + 'plots/data_count.png')
@@ -93,13 +94,50 @@ def rebuild():
     word_count(path + 'tag_file.txt', path + 'tag_file_pickled')
     word_count(path + 'attrs_file.txt', path + 'attrs_file_pickled')
 
+
 def quick_analysis():
     path = './analysis/'
     analyze_results(path + 'tag_file.txt', path + 'plots/' + 'tag_count.png', pikl=1, floor=50, scale='log')
     analyze_results(path + 'attrs_file.txt', path + 'plots/' + 'attrs_count.png', pikl=1, floor=100, scale='linear')
 
 
-rebuild()
-quick_analysis()
+def build_tag_vocabulary(directory):
+    build_files(directory, './analysis/tag_file.txt')
+    word_count('./analysis/tag_file.txt', './analysis/tag_pickled')
+    vocab = []
+    with open('./analysis/tag_pickled', 'rb') as handle:
+        data = pickle.load(handle)
+        for tag in data:
+            if data[tag] > sum(data)/100:
+                vocab.append(tag)
+        with open('./vocabulary/tag_vocab', 'wb') as new_handle:
+            pickle.dump(vocab, new_handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def build_attrs_vocabulary(directory):
+    build_files(directory, './analysis/attrs_file.txt')
+    word_count('./analysis/attrs_file.txt', './analysis/attrs_pickled')
+    vocab = []
+    with open('./analysis/attrs_pickled', 'rb') as handle:
+        data = pickle.load(handle)
+        for tag in data:
+            if data[tag] > sum(data)/100:
+                vocab.append(tag)
+        with open('./vocabulary/attrs_vocab', 'wb') as new_handle:
+            pickle.dump(vocab, new_handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def pickle_trees(directory):
+    strings = dir_to_str(directory)
+    trees = [parse_string(html_string, MyHTMLParser()).tree for html_string in strings]
+    with open('./tree_directory', 'wb') as handle:
+        pickle.dump(trees, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+pickle_trees('./common_sites')
+# rebuild()
+# quick_analysis()
+
+
 # build_files("./common_sites", "./analysis")
 
