@@ -1,26 +1,48 @@
+from typing import Dict
 from parsing import *
-from html.parser import HTMLParser
-# import codecs
-# import os
-import seaborn as sns
 import parsing
 import pickle
+OTHER: int = 0  # other value is currently 0
+
+
+class Vocabulary(dict):  # Abstract dict class creating a tokenizing map from a frequency dictionary
+    def __init__(self, floor: int = 100, other: int = OTHER):
+        super().__init__()
+        self.__setitem__('other', other)
+        self.other = other
+        self.vocab = ['other']
+        self.floor = floor
+
+    def __getitem__(self, item: str) -> int:
+        if item in self.keys():
+            return super().__getitem__(item)
+        else:
+            return self.other
+
+    def feed(self, freq: Dict[str, int]):  # build map from frequency dict
+        for key in freq:
+            if freq[key] > self.floor and key not in self.keys():
+                self.__setitem__(key, len(self.keys()))
+                self.vocab.append(key)
 
 
 class FreqParser(HTMLParser):
-    def __init__(self, tf, af, df):
+    def __init__(self, tf, af, df, kf, vf):
         super().__init__()
         self.tf = tf
         self.af = af
         self.df = df
+        self.kf = kf
+        self.vf = vf
 
     def handle_starttag(self, tag, attrs):
         self.tf.write(tag + " ")
         for attr in attrs:
-            string = str(attr)
-            index = string.find(',')
-            string = string[:index + 1] + string[index + 2:]
+            key, value = attr
+            string = '(' + str(key) + ',' + str(value) + ')'
             self.af.write(string + " ")
+            self.kf.write(str(key) + " ")
+            self.vf.write(str(value) + " ")
 
     def handle_endtag(self, tag):
         pass
@@ -33,12 +55,14 @@ class FreqParser(HTMLParser):
 
 def build_files(start_directory, end_directory):
     print('testing')
-    with open(end_directory + "/tag_file.txt", 'w', errors='ignore') as tf, \
-         open(end_directory + "/attrs_file.txt", 'w', errors='ignore') as af, \
-         open(end_directory + "/data_file.txt", 'w', errors='ignore') as df:
+    with open(end_directory + "/tag_file.txt", 'w', errors='ignore') as tag_f, \
+         open(end_directory + "/attr_file.txt", 'w', errors='ignore') as attr_f, \
+         open(end_directory + "/key_file.txt", 'w', errors='ignore') as key_f, \
+         open(end_directory + "/value_file.txt", 'w', errors='ignore') as value_f,  \
+         open(end_directory + "/data_file.txt", 'w', errors='ignore') as data_f:
 
         strings = parsing.dir_to_str(start_directory)
-        parser = FreqParser(tf, af, df)
+        parser = FreqParser(tag_f, attr_f, data_f, key_f, value_f)
         [parsing.parse_string(x, parser) for x in strings]
 
 
@@ -51,80 +75,44 @@ def word_count(file_in, pickle_file):
                 dictionary[word] += 1
             else:
                 dictionary[word] = 1
-        sorted_dictionary = dict(sorted(dictionary.items(), key=lambda item: item[1]))
+        sorted_dictionary = dict(sorted(dictionary.items(), key=lambda item: item[1], reverse=True))
+
         with open(pickle_file, 'wb') as handle:
             pickle.dump(sorted_dictionary, handle, protocol=pickle.HIGHEST_PROTOCOL)
         return sorted_dictionary
 
 
-def trim_dict(dictionary, floor):
-    print(len(dictionary))
-    delete = []
-    for x in dictionary:
-        if dictionary[x] < floor:
-            delete.append(x)
-    for x in delete:
-        del dictionary[x]
-    print(len(dictionary))
-
-
-def analyze_results(file_in, file_out, pikl=0, floor=0, scale='linear'):
-    if pikl == 1:
-        with open(file_in[:-4] + "_pickled", 'rb') as handle:
-            data = pickle.load(handle)
-    else:
-        data = word_count(file_in, file_in[:-4] + '_pickled')
-
-    trim_dict(data, floor)
-    plot = sns.barplot(x=list(data.keys()), y=list(data.values()))
-    plot.set_yscale(scale)
-    fig = plot.get_figure()
-    fig.savefig(file_out)
-
-
-# analyze_results(path + 'tag_file.txt', path + 'plots/tag_count.png', pikl=1, floor=2, scale='log')
-# analyze_results(path + 'attrs_file.txt', path + 'plots/attrs_count.png')
-# analyze_results(path + 'data_file.txt', path + 'plots/data_count.png')
-# dict = word_count(path + 'attrs_file.txt', path + 'attrs_file_pickled')
-
-
-def rebuild():
-    path = './analysis/'
-    build_files('./common_sites', './analysis')
-    word_count(path + 'tag_file.txt', path + 'tag_file_pickled')
-    word_count(path + 'attrs_file.txt', path + 'attrs_file_pickled')
-
-
-def quick_analysis():
-    path = './analysis/'
-    analyze_results(path + 'tag_file.txt', path + 'plots/' + 'tag_count.png', pikl=1, floor=50, scale='log')
-    analyze_results(path + 'attrs_file.txt', path + 'plots/' + 'attrs_count.png', pikl=1, floor=100, scale='linear')
-
-
-def build_tag_vocabulary(directory):
-    build_files(directory, './analysis/tag_file.txt')
+def build_vocabs(directory='./common_sites', tag_floor=10, key_floor=10, value_floor=10, attr_floor=10):
+    build_files(directory, './analysis')
+    word_count('./analysis/attr_file.txt', './analysis/attr_pickled')
+    word_count('./analysis/key_file.txt', './analysis/key_pickled')
+    word_count('./analysis/value_file.txt', './analysis/value_pickled')
     word_count('./analysis/tag_file.txt', './analysis/tag_pickled')
-    vocab = []
-    with open('./analysis/tag_pickled', 'rb') as handle:
-        data = pickle.load(handle)
-        for tag in data:
-            if data[tag] > sum(data)/100:
-                vocab.append(tag)
-        with open('./vocabulary/tag_vocab', 'wb') as new_handle:
-            pickle.dump(vocab, new_handle, protocol=pickle.HIGHEST_PROTOCOL)
+    tag_vocab, attr_vocab, key_vocab, value_vocab = Vocabulary(tag_floor, OTHER), Vocabulary(attr_floor, OTHER), Vocabulary(key_floor, OTHER), Vocabulary(value_floor, OTHER)
+    with open('./analysis/attr_pickled', 'rb') as attr_pickle, \
+         open('./analysis/tag_pickled', 'rb') as tag_pickle, \
+         open('./analysis/key_pickled', 'rb') as key_pickle, \
+         open('./analysis/value_pickled', 'rb') as value_pickle:
+        attrs, tags, keys, values = pickle.load(attr_pickle), pickle.load(tag_pickle), pickle.load(key_pickle), pickle.load(value_pickle)
+        tag_vocab.feed(tags), attr_vocab.feed(attrs), key_vocab.feed(keys), value_vocab.feed(values)
+        with open('./analysis/vocab/tag_pickle', 'wb') as tag_vocab_pickle, \
+             open('./analysis/vocab/attr_pickle', 'wb') as attr_vocab_pickle, \
+             open('./analysis/vocab/key_pickle', 'wb') as key_vocab_pickle, \
+             open('./analysis/vocab/value_pickle', 'wb') as value_vocab_pickle:
+            pickle.dump(tag_vocab, tag_vocab_pickle, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(attr_vocab, attr_vocab_pickle, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(key_vocab, key_vocab_pickle, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(value_vocab, value_vocab_pickle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def build_attrs_vocabulary(directory):
-    build_files(directory, './analysis/attrs_file.txt')
-    word_count('./analysis/attrs_file.txt', './analysis/attrs_pickled')
-    vocab = []
-    with open('./analysis/attrs_pickled', 'rb') as handle:
-        data = pickle.load(handle)
+'''
         for tag in data:
             if data[tag] > sum(data)/100:
                 vocab.append(tag)
         with open('./vocabulary/attrs_vocab', 'wb') as new_handle:
             pickle.dump(vocab, new_handle, protocol=pickle.HIGHEST_PROTOCOL)
+    with open('./analysis/key_pickled','rb') as
+'''
 
 
 def pickle_trees(directory):
@@ -134,10 +122,13 @@ def pickle_trees(directory):
         pickle.dump(trees, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-pickle_trees('./common_sites')
+# pickle_trees('./common_sites')
 # rebuild()
 # quick_analysis()
 
 
-# build_files("./common_sites", "./analysis")
-
+# build_files('./common_sites','./analysis')
+# word_count('./analysis/tag_file.txt', './analysis/tag_pickled')
+# word_count('./analysis/attr_file.txt', './analysis/attr_pickled')
+# word_count('./analysis/key_file.txt', './analysis/key_pickled')
+# word_count('./analysis/value_file.txt', './analysis/value_pickled')

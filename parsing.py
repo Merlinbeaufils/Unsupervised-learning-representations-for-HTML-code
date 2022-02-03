@@ -11,8 +11,8 @@ class MyHTMLParser(HTMLParser):
     def __init__(self):
         super().__init__()
         # addressing omittable start tags
-        self.head = HtmlNode("head", [], None, [], depth=1, child_index=0)
-        self.body = HtmlNode("body", [], None, [], depth=1, child_index=1)
+        self.head = HtmlNode("head", [], None, [], depth=1)
+        self.body = HtmlNode("body", [], None, [], depth=1)
         self.tree = HtmlNode("html", [], None, [self.head, self.body])
         self.head.father = self.body.father = self
         self.node_stack = [self.tree, self.head]
@@ -23,7 +23,6 @@ class MyHTMLParser(HTMLParser):
             node = HtmlNode(tag=tag.lower(), attrs=attrs, father=father, children=[])
             node.depth = len(self.node_stack)
             father.children.append(node)
-            node.child_index = len(father.children)
             self.node_stack.append(node)
         elif tag.lower() == "body":
             self.node_stack.append(self.body)
@@ -78,7 +77,7 @@ class MyHTMLParser(HTMLParser):
 
 
 class HtmlNode:
-    def __init__(self, tag="", attrs=None, father=None, children=None, depth=0, child_index=0, mask_val=0):
+    def __init__(self, tag="", attrs=None, father=None, children=None, depth=0, mask_val=0):
         if children is None:
             children = []
         if attrs is None:
@@ -91,8 +90,8 @@ class HtmlNode:
         self.depth = depth
         self.sim_string = 1
         self.path = []
-        self.child_index = child_index
         self.mask_val = mask_val
+        self.temp = ''
         # self.total_children = 0
         # self.next = [None for x in range(self.total_children)]
         # self.leaf = False
@@ -134,24 +133,33 @@ class HtmlNode:
         else:
             for child in self.children:
                 path += child.build_path()
-            if self.tag != "html":
-                path += [self]
+            path += [self]
             self.path = path
             return self.path
 
     def mask(self, tree_path_index):
-        x = HtmlNode('random')
-        node = self.path[tree_path_index]
-        node.father.children[node.child_index] = HtmlNode("mask", mask_val=1)
+        self.path[tree_path_index].mask_self()
 
+    def mask_self(self):
+        self.temp = self.tag
+        self.tag = "mask"
+        self.mask_val = 1
+
+    def unmask_self(self):
+        self.tag = self.temp
+        self.temp = ''
+        self.mask_val = 0
 
 
 def parse_string(string: str, parser=None):
+    t = 0
     if parser is None:
         parser = MyHTMLParser()
+        t = 1
     x = parser
     x.feed(string)
-    x.tree.build_path()
+    if t == 1:
+        x.tree.build_path()
     return x
 
 
@@ -161,12 +169,7 @@ def dir_to_str(directory: str) -> [str]:
         f = os.path.join(directory, filename)
         # checking if it is a file
         if os.path.isfile(f):
-            print(f)
+            print(f, "bruh")
             file = codecs.open(f, "r", "utf-8")
             strings.append(file.read())
     return strings
-
-
-html = dir_to_str('./random')[0]
-html_node = parse_string(html, MyHTMLParser()).tree
-print()
