@@ -25,6 +25,9 @@ class Vocabulary(dict):  # Abstract dict class creating a tokenizing map from a 
                 self.__setitem__(key, len(self.keys()))
                 self.vocab.append(key)
 
+    def reverse(self, val):
+        return self.vocab[val]
+
 
 class FreqParser(HTMLParser):
     def __init__(self, tf, af, df, kf, vf):

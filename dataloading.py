@@ -1,5 +1,4 @@
 from typing import List, Tuple
-
 from tree_tokenizer import *
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
@@ -10,9 +9,10 @@ Tuple_list = List[Tuple[int, int]]
 Sample = Tuple[Node_Tokens, Tree_Tokens]
 Samples = List[Sample]
 Forest = List[HtmlNode]
-PAD_VALUE = 0
+# PAD_VALUE = 0
 SIZE = 200
 MY_COLLATE = 0
+upgrade_collate = 0
 
 
 def pickle_load(directory: str) -> any:  # Returns a pickled object located at directory
@@ -45,9 +45,12 @@ class CustomTreeDataset(Dataset):  # Tree dataset class allowing handling of htm
         self.build_samples(indexes)
         if not self.my_collate:
             self.padding_tokens()
+        if upgrade_collate:
+            self.upgrade_collate()
 
     def __getitem__(self, index: int) -> Sample:  # returns a (subtree, tree) pair. Tokenized
-        return self.samples[index]
+        token_node, token_tree = self.samples[index]
+        return Tensor(token_node), Tensor(token_tree)
 
     def __len__(self) -> int:  # returns # of samples
         return len(self.indexes)
@@ -77,6 +80,8 @@ class CustomTreeDataset(Dataset):  # Tree dataset class allowing handling of htm
         for node_sample, tree_sample in self.samples:
             pad_node(node_sample, self.node_max)
             pad_tree(tree_sample, self.tree_max, self.node_max)
+
+
 
 
 def pad_tree(tree: list, length_tree: int, length_node: int) -> None:
@@ -128,8 +133,7 @@ def basic_data_loader_build(size=SIZE):
 
 
 train_dataloader_, test_dataloader_ = basic_data_loader_build()
-train_features, train_labels = next(iter(train_dataloader_))
-print(f"Feature batch shape: {train_features.size()}")
-print(f"Labels batch shape: {train_labels.size()}")
+train_features_, train_labels_ = next(iter(train_dataloader_))
+pass
 
 

@@ -2,6 +2,7 @@ from html.parser import HTMLParser
 import os
 # from html.entities import name2codepoint
 import codecs
+from typing import List, Tuple
 
 void_tags = ["area", "base", "br", "col", "command", "embed", "hr", "img", "input", "keygen", "link", "meta", "param",
              "source", "track", "wbr"]
@@ -77,7 +78,7 @@ class MyHTMLParser(HTMLParser):
 
 
 class HtmlNode:
-    def __init__(self, tag="", attrs=None, father=None, children=None, depth=0, mask_val=0):
+    def __init__(self, tag="", attrs: Tuple[str, str] = None, father=None, children: List = None, depth=0, mask_val=0):
         if children is None:
             children = []
         if attrs is None:
@@ -91,7 +92,7 @@ class HtmlNode:
         self.sim_string = 1
         self.path = []
         self.mask_val = mask_val
-        self.temp = ''
+        self.temp_tag, self.temp_attrs, self.temp_data = '', [], ''
         # self.total_children = 0
         # self.next = [None for x in range(self.total_children)]
         # self.leaf = False
@@ -141,13 +142,21 @@ class HtmlNode:
         self.path[tree_path_index].mask_self()
 
     def mask_self(self):
-        self.temp = self.tag
+        self.temp_tag = self.tag
+        self.temp_attrs = self.attrs.copy()
+        self.temp_data = self.data
         self.tag = "mask"
+        self.attrs.clear()
+        self.data = ''
         self.mask_val = 1
 
     def unmask_self(self):
-        self.tag = self.temp
-        self.temp = ''
+        self.tag = self.temp_tag
+        self.data = self.temp_data
+        self.attrs = self.temp_attrs
+        self.temp_tag = ''
+        self.temp_data = ''
+        self.temp_attrs = []
         self.mask_val = 0
 
 
