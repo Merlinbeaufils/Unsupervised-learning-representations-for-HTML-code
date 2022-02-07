@@ -3,6 +3,9 @@ import os
 # from html.entities import name2codepoint
 import codecs
 from typing import List, Tuple
+from argparse import ArgumentParser
+from argparse import Namespace
+import pickle
 
 void_tags = ["area", "base", "br", "col", "command", "embed", "hr", "img", "input", "keygen", "link", "meta", "param",
              "source", "track", "wbr"]
@@ -12,10 +15,10 @@ class MyHTMLParser(HTMLParser):
     def __init__(self):
         super().__init__()
         # addressing omittable start tags
-        self.head = HtmlNode("head", [], None, [], depth=1)
-        self.body = HtmlNode("body", [], None, [], depth=1)
-        self.tree = HtmlNode("html", [], None, [self.head, self.body])
-        self.head.father = self.body.father = self
+        self.tree: HtmlNode = HtmlNode("html", attrs=[], father=None, depth=0)
+        self.head: HtmlNode = HtmlNode("head", attrs=[], father=self.tree, depth=1)
+        self.body: HtmlNode = HtmlNode("body", attrs=[], father=self.tree, depth=1)
+        self.tree.children = [self.body, self.head]
         self.node_stack = [self.tree, self.head]
 
     def handle_starttag(self, tag, attrs):
@@ -78,20 +81,20 @@ class MyHTMLParser(HTMLParser):
 
 
 class HtmlNode:
-    def __init__(self, tag="", attrs: Tuple[str, str] = None, father=None, children: List = None, depth=0, mask_val=0):
+    def __init__(self, tag="", attrs: List[Tuple[str, str]] = None, father=None, children: List = None, depth=0, mask_val=0):
         if children is None:
             children = []
         if attrs is None:
             attrs = []
-        self.father = father
-        self.children = children
-        self.tag = tag
+        self.father: HtmlNode = father
+        self.children: List[HtmlNode] = children
+        self.tag: str = tag
         self.attrs = attrs
-        self.data = ""
-        self.depth = depth
+        self.data: str = ""
+        self.depth: int = depth
         self.sim_string = 1
-        self.path = []
-        self.mask_val = mask_val
+        self.path: List[HtmlNode] = []
+        self.mask_val: int = mask_val
         self.temp_tag, self.temp_attrs, self.temp_data = '', [], ''
         # self.total_children = 0
         # self.next = [None for x in range(self.total_children)]
@@ -127,7 +130,7 @@ class HtmlNode:
             return self.tag
 
     def build_path(self):
-        path = []
+        path: List[HtmlNode] = []
         if not self.children:
             self.path = [self]
             return self.path
@@ -182,3 +185,13 @@ def dir_to_str(directory: str) -> [str]:
             file = codecs.open(f, "r", "utf-8")
             strings.append(file.read())
     return strings
+
+
+def pickle_dump(directory: str, item: any) -> None:
+    with open(directory, 'wb') as handle:
+        pickle.dump(item, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def pickle_load(directory: str) -> any:
+    with open(directory, 'rb') as handle:
+        return pickle.load(handle)

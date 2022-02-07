@@ -41,3 +41,18 @@ built, specify pikl=1. Also specify a frequency floor to be sisplayed and the sc
 ### Traversal
 used this algorithm to traverse tree bottom up
 https://www.geeksforgeeks.org/bottom-up-traversal-of-a-trie/
+
+
+### dataloading 2 versus dataloading 
+Uses a sparsing function to reduce tree size
+
+### frequency 2 versus frequency
+Gets rid of attributes
+implements use of Namespace
+
+### for masked language modeling
+https://towardsdatascience.com/masked-language-modelling-with-bert-7d49793e5d2c
+https://towardsdatascience.com/from-pre-trained-word-embeddings-to-pre-trained-language-models-focus-on-bert-343815627598
+https://github.com/gucci-j/light-transformer-emnlp2021/blob/master/src/model/model.py
+https://huggingface.co/transformers/v3.3.1/_modules/transformers/modeling_auto.html
+https://cloudacademy.com/course/convolutional-neural-networks/images-as-tensors/
