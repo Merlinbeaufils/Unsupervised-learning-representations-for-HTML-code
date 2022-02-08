@@ -1,0 +1,40 @@
+Current open questions of the project:
+    How to reduce size of the tree?
+        analysis of tags, attributes and data
+            much data unusable
+            Only around 60 tags are actually used more than once. Make "other" tag
+            Which tags and in what context present useless data?
+            What about attributes?
+
+    which tags, attributes and data are irrelevant?
+        Does this change depending on the end task?
+
+    How to format load the samples as tree and masked subtree?
+
+    Which resources and how to use ssh for training?
+
+    How will I evaluate my project?
+        Html generator?
+        masking and recovering subtrees
+        downstream tasks:
+            next site guess
+            click probability
+
+    Which modeling strategies will I use?
+        1) masking self-supervised learning
+        2) graph deep-learning?
+        3) bag of words?
+
+Current tasks:
+    Making a path through the nodes of the tree.
+        Which node(s) should have the path? How much info to keep?
+        BFS or DFS?
+    Implementing dataloader with tree-subtree pairs.
+
+Finished:
+    HTML parser for building tree
+    HTML parser for analysis of tags, attributes and data
+    Analysis code for tags. Almost for attrs and data
+    HtmlNode class for the html tree
+
+
