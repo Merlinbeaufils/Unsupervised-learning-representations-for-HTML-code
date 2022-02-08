@@ -8,6 +8,7 @@ from project.current.parsing import dir_to_str, strings_to_trees, pickle_dump
 
 OTHER: int = 0  # other value is currently 0
 
+
 class Vocabulary(dict):  # Abstract dict class creating a tokenizing map from a frequency_dicts dictionary
     def __init__(self, floor: int = 100, other: int = OTHER):
         super().__init__()
@@ -61,7 +62,7 @@ class FreqParser(HTMLParser):
 
 
 def build_files(start_directory, end_directory) -> None:
-    os.makedirs(end_directory, exist_ok=True)
+    os.makedirs(end_directory, mode=0o777, exist_ok=True)
     with open(end_directory + "/tags.txt", 'w', errors='ignore') as tag_f, \
          open(end_directory + "/keys.txt", 'w', errors='ignore') as key_f, \
          open(end_directory + "/values.txt", 'w', errors='ignore') as value_f,  \
@@ -77,7 +78,7 @@ def build_trees(directory, args: Namespace) -> None:
     strings = dir_to_str(directory)
     trees = strings_to_trees(strings)
     args.trees = trees
-    os.makedirs(directory + 'trees', exist_ok=True)
+    os.makedirs(directory + 'trees', mode=0o777, exist_ok=True)
     if args.pickle_trees:
         pickle_dump(directory + 'trees/trees', trees)
 
@@ -99,8 +100,8 @@ def word_count(file_in: str, pickle_file: str) -> Dict:
 
 def build_vocabs(directory, tag_floor=10, key_floor=10, value_floor=10, total_floor=10, args: Namespace = None):
     build_files(directory, directory + 'text_files')
-    os.makedirs(directory + 'frequency_dict', exist_ok=True)
-    os.makedirs(directory + 'vocabs', exist_ok=True)
+    os.makedirs(directory + 'frequency_dict', mode=0o777, exist_ok=True)
+    os.makedirs(directory + 'vocabs', mode=0o777, exist_ok=True)
     keys = word_count(directory + 'text_files/keys.txt', directory + 'frequency_dict/key_freq')
     values = word_count(directory + 'text_files/values.txt', directory + 'frequency_dict/values_freq')
     tags = word_count(directory + 'text_files/tags.txt', directory + 'frequency_dict/tags_freq')

@@ -83,7 +83,7 @@ class BaseTreeDataset(Dataset):  # Tree dataset class allowing handling of html 
             random_sparse(tree, max_size)
 
 
-class ConTreeDataset(BaseTreeDataset): # Samples are of type: (masked_tree, tree)
+class ContTreeDataset(BaseTreeDataset):  # Samples are of type: (masked_tree, tree)
     def build_sample(self, node_indexes, tree_index, args):
         tree: HtmlNode = self.trees[tree_index]
         tokenized_tree = tokenize_tree(tree, args, self.tokenizer)
@@ -104,6 +104,10 @@ class ConTreeDataset(BaseTreeDataset): # Samples are of type: (masked_tree, tree
                     random.shuffle(indexes)
                     print('done with indexes. Length: ', len(indexes))
                     return indexes
+        random.shuffle(indexes)
+        print('done with indexes. Length: ', len(indexes))
+        return indexes
+
     def padding_tokens(self) -> None:
         for masked_tree, tree in self.samples:
             pad_tree(tree, self.tree_max, self.node_max)

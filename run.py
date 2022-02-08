@@ -1,8 +1,9 @@
 from argparse import Namespace, ArgumentParser
 from typing import Tuple, List
+import os
 
 from torch.utils.data import DataLoader, random_split
-from project.current.dataloading import BaseTreeDataset, ConTreeDataset
+from project.current.dataloading import BaseTreeDataset, ContTreeDataset
 from project.current.frequency import build_trees, build_vocabs
 from project.current.parsing import pickle_dump, pickle_load, HtmlNode
 from project.current.sparsing import random_sparse
@@ -14,32 +15,38 @@ models_loc = './project/models/'  # models
 
 
 def reduce_trees(reduction: str, trees: List[HtmlNode], max_tree_size: int, args: Namespace) -> None:
-    if args.reduction == 'random':
-        for tree in args.trees:
-            random_sparse(tree=tree, goal_size=args.max_tree_size)
-        pickle_dump(directory=args.setup_location + 'trees/trees_short', item=args.trees)
+    if reduction == 'random':
+        for tree in trees:
+            random_sparse(tree=tree, goal_size=max_tree_size)
+        pickle_dump(directory=args.setup_location + 'trees/trees_short', item=trees)
         args.reduction_function = random_sparse
     else:
         raise NoReduction
 
 
 def set_model(model_type: str, args: Namespace):
-    if args.model_type == 'bow':
+    if model_type == 'bow':
         args.model = bow_model
     else:
         raise NoModel
 
 
 def set_dataloader(dataloader: str, trees: List[HtmlNode], indexes_size: int,
-                   train_length: int, test_length: int, args: Namespace) -> List:
+                   train_length: int, test_length: int, args: Namespace) -> Tuple[DataLoader, DataLoader]:
     if dataloader == 'base':
-        dataset = BaseTreeDataset(trees, args, indexes_size)
-        return random_split(dataset, [train_length, test_length])
-    elif args.dataloader == 'Con':
-        dataset = ConTreeDataset(args.trees, args, indexes_size)
-        return random_split(dataset, [train_length, test_length])
+        dataset = BaseTreeDataset(trees=trees, args=args, indexes_length=indexes_size)
+        train_data, test_data = random_split(dataset, [train_length, test_length])
+    elif args.dataloader == 'Cont':
+        dataset = ContTreeDataset(trees=trees, args=args, indexes_length=indexes_size)
+        train_data, test_data = random_split(dataset, [train_length, test_length])
     else:
         raise NoDataloader
+    train_dataloader, test_dataloader = DataLoader(train_data, batch_size=64, shuffle=True), \
+                                        DataLoader(test_data, batch_size=64, shuffle=True)
+    os.makedirs(args.setup_location + 'dataloaders', mode=0o777, exist_ok=True)
+    pickle_dump(args.setup_location + 'dataloaders/train_' + dataloader, train_dataloader)
+    pickle_dump(args.setup_location + 'dataloaders/test_' + dataloader, test_dataloader)
+    return train_dataloader, test_dataloader
 
 
 def main(args: Namespace) -> None:
@@ -51,8 +58,8 @@ def main(args: Namespace) -> None:
         args.keys = pickle_load(directory=setup_location + 'vocabs/keys')
         args.values = pickle_load(directory=setup_location + 'vocabs/values')
         args.total = pickle_load(directory=setup_location + 'vocabs/total')
-        train_dataloader = pickle_load(directory=setup_location + 'dataloaders/train')
-        test_dataloader = pickle_load(directory=setup_location + 'dataloaders/test')
+        train_dataloader = pickle_load(directory=setup_location + 'dataloaders/train_' + args.dataloader)
+        test_dataloader = pickle_load(directory=setup_location + 'dataloaders/test_' + args.dataloader)
     else:
         if args.build_trees:
             build_trees(directory=setup_location, args=args)
@@ -68,21 +75,15 @@ def main(args: Namespace) -> None:
             args.total = pickle_load(directory=setup_location + 'vocabs/total')
 
         reduce_trees(args.reduction, args.trees, args.max_tree_size, args)
-        for tree in args.trees:
-            args.reduction_function(tree=tree, goal_size=args.max_tree_size)
-            pickle_dump(directory=setup_location + 'trees/trees_short', item=args.trees)
 
-        train_data, test_data = set_dataloader(args.dataloader, args.trees, args.indexes_size,
-                                               args.train_length, args.test_length, args)
+        train_dataloader, test_dataloader = set_dataloader(args.dataloader, args.trees,
+                                                           args.indexes_size, args.train_length, args.test_length, args)
 
-        train_dataloader = DataLoader(train_data, batch_size=64, shuffle=True)
-        test_dataloader = DataLoader(test_data, batch_size=64, shuffle=True)
-        pickle_dump(setup_location + 'dataloaders/train', train_dataloader)
-        pickle_dump(setup_location + 'dataloaders/test', test_dataloader)
     train_features, train_labels = next(iter(train_dataloader))
+    test_features, test_labels = next(iter(train_dataloader))
     feature, label = train_features[0], train_labels[0]
 
-    set_model(args.model_type, args=args)
+    set_model(model_type=args.model_type, args=args)
     args.model(args)
     pass
 
