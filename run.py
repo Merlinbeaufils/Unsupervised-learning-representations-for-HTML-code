@@ -2,14 +2,21 @@ from argparse import Namespace, ArgumentParser
 from typing import Tuple, List
 import os
 
+from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning import Trainer
 from torch.utils.data import DataLoader, random_split
 from project.current.dataloading import BaseTreeDataset, ContTreeDataset
 from project.current.frequency import build_trees, build_vocabs
 from project.current.parsing import pickle_dump, pickle_load, HtmlNode
 from project.current.sparsing import random_sparse
-from project.models.bow_implementation import bow_model
+from project.models.model_pipe import BoWSum, FlatEmbedding
+import torch
+
+torch.manual_seed(1)
 
 # Locations of relevant objects
+from project.models.model_pipe import BaseModel
+
 file_loc = './data/'
 models_loc = './project/models/'  # models
 
@@ -26,13 +33,14 @@ def reduce_trees(reduction: str, trees: List[HtmlNode], max_tree_size: int, args
 
 def set_model(model_type: str, args: Namespace):
     if model_type == 'bow':
-        args.model = bow_model
+        args.model = BoWSum
     else:
         raise NoModel
 
 
 def set_dataloader(dataloader: str, trees: List[HtmlNode], indexes_size: int,
-                   train_length: int, test_length: int, args: Namespace) -> Tuple[DataLoader, DataLoader]:
+                   train_length: int, test_length: int, args: Namespace) -> Tuple[
+    DataLoader, DataLoader, BaseTreeDataset]:
     if dataloader == 'base':
         dataset = BaseTreeDataset(trees=trees, args=args, indexes_length=indexes_size)
         train_data, test_data = random_split(dataset, [train_length, test_length])
@@ -46,7 +54,8 @@ def set_dataloader(dataloader: str, trees: List[HtmlNode], indexes_size: int,
     os.makedirs(args.setup_location + 'dataloaders', mode=0o777, exist_ok=True)
     pickle_dump(args.setup_location + 'dataloaders/train_' + dataloader, train_dataloader)
     pickle_dump(args.setup_location + 'dataloaders/test_' + dataloader, test_dataloader)
-    return train_dataloader, test_dataloader
+    pickle_dump(args.setup_location + 'dataloaders/dataset_' + dataloader, dataset)
+    return train_dataloader, test_dataloader, dataset
 
 
 def main(args: Namespace) -> None:
@@ -60,6 +69,7 @@ def main(args: Namespace) -> None:
         args.total = pickle_load(directory=setup_location + 'vocabs/total')
         train_dataloader = pickle_load(directory=setup_location + 'dataloaders/train_' + args.dataloader)
         test_dataloader = pickle_load(directory=setup_location + 'dataloaders/test_' + args.dataloader)
+        dataset = pickle_load(directory=setup_location + 'dataloaders/dataset_' + args.dataloader)
     else:
         if args.build_trees:
             build_trees(directory=setup_location, args=args)
@@ -76,15 +86,23 @@ def main(args: Namespace) -> None:
 
         reduce_trees(args.reduction, args.trees, args.max_tree_size, args)
 
-        train_dataloader, test_dataloader = set_dataloader(args.dataloader, args.trees,
-                                                           args.indexes_size, args.train_length, args.test_length, args)
+        train_dataloader, test_dataloader, dataset = set_dataloader(args.dataloader, args.trees,
+                                                                    args.indexes_size, args.train_length,
+                                                                    args.test_length, args)
 
-    train_features, train_labels = next(iter(train_dataloader))
-    test_features, test_labels = next(iter(train_dataloader))
-    feature, label = train_features[0], train_labels[0]
-
-    set_model(model_type=args.model_type, args=args)
-    args.model(args)
+    # train_features, train_labels = next(iter(train_dataloader))
+    # test_features, test_labels = next(iter(train_dataloader))
+    # feature, label = train_features[0], train_labels[0]
+    submodel = FlatEmbedding(num_embeddings=len(args.total), embedding_dim=600)
+    # submodel2 = FlatEmbedding(num_embeddings=len(args.total), embedding_dim=600)
+    basemodel = BaseModel(dataset, submodel)
+    logger = TensorBoardLogger('tb_logs', name='my_model')
+    trainer = Trainer(
+        gpus=0,
+        logger=[logger],
+        max_epochs=5
+    )
+    trainer.fit(basemodel)
     pass
 
     # train_features, train_labels = next(iter(train_dataloader))
