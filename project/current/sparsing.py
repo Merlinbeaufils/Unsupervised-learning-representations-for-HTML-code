@@ -11,4 +11,14 @@ def random_sparse(tree: HtmlNode, goal_size): # reduce number of nodes in tree t
     return tree
 
 
+def sparse_depth(tree: HtmlNode, depth: int = 5):
+    for node in tree.path:
+        if node.depth > depth:
+            node.father.children = [child for child in node.father.children if child != node]
+    tree.build_path()
+    return tree
+
+
+
+
 
