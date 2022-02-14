@@ -151,7 +151,7 @@ if __name__ == "__main__":
     parser.add_argument('--skip_setup', action='store_true')
     parser.add_argument('--model_type', type=str, default='flatlin')
     parser.add_argument('--dataloader', type=str, default='base')
-    parser.add_argument('--total_floor', type=int, default=10)
+    parser.add_argument('--total_floor', type=int, default=2)
     parser.add_argument('--key_only', action='store_true')
     parser.add_argument('--total_vocab', action='store_true')
     parser.add_argument('--lr', type=float, default=1e-4)

@@ -45,16 +45,15 @@ class BaseModel(LightningModule):
         return reps1, reps2
 
     def training_step(self, train_batch, batch_idx):
-        reps1, reps2 = self.forward(train_batch)  # 64x600
-
-        reps1 = reps1 / torch.linalg.norm(reps1, dim=1, keepdims=True)
-        reps2 = reps2 / torch.linalg.norm(reps2, dim=1, keepdims=True)
+        reps1, reps2 = self.forward(train_batch)  # batch_dim x embedding_dim
+        #reps1 = reps1 / torch.linalg.norm(reps1, dim=1, keepdims=True)
+        #reps2 = reps2 / torch.linalg.norm(reps2, dim=1, keepdims=True)
         # reps1, reps2 = self.activation(reps1, inplace=True), self.activation(reps2, inplace=True)
 
-
-        scores = reps1 @ reps2.T
-        labels = torch.eye(reps1.size(0), device=reps1.device)
+        scores = reps1 @ reps2.T  # batch_dim x batch_dim
+        labels = torch.arange(reps1.size(0), device=reps1.device)  # batch_dim x batch_dim
         loss = self.loss_function(scores, labels)
+        print(loss.item())
         return loss
 
 
@@ -76,11 +75,16 @@ def random_stuff():
 
 
 class FlatEmbedding(nn.Embedding):
-    def forward(self, trees) -> Tensor:
+    def forward(self, trees: Tensor) -> Tensor:
         flat_trees = torch.flatten(trees, start_dim=1).long()
         tree_reps = super().forward(flat_trees)
+        mask = flat_trees == 0
+        tree_reps[mask] = 0
+        #tree_reps = tree_reps.mean(dim=1)
         tree_reps = tree_reps.sum(dim=1)
         return tree_reps
+
+
 
 
 class FlatEmbeddingAndLinear(nn.Embedding):

@@ -101,7 +101,7 @@ def word_count(file_in: str, pickle_file: str) -> Dict[str, int]:
         return sorted_dictionary
 
 
-def build_vocabularies(directory, tag_floor=10, key_floor=10, value_floor=10, total_floor=10, key_only=False)\
+def build_vocabularies(directory, tag_floor=2, key_floor=2, value_floor=2, total_floor=10)\
         -> Tuple[Vocabulary, Vocabulary, Vocabulary, Vocabulary]:
     os.makedirs(directory + 'frequency_dict', mode=0o777, exist_ok=True)
     os.makedirs(directory + 'vocabs', mode=0o777, exist_ok=True)
@@ -109,8 +109,8 @@ def build_vocabularies(directory, tag_floor=10, key_floor=10, value_floor=10, to
     values = word_count(directory + 'text_files/values.txt', directory + 'frequency_dict/values_freq')
     tags = word_count(directory + 'text_files/tags.txt', directory + 'frequency_dict/tags_freq')
     total = word_count(directory + 'text_files/total.txt', directory + 'frequency_dict/total_freq')
-    tag_vocab, key_vocab = Vocabulary(tags), Vocabulary(keys)
-    total_vocab, value_vocab = Vocabulary(total), Vocabulary(values)
+    tag_vocab, key_vocab = Vocabulary(tags, tag_floor), Vocabulary(keys, key_floor)
+    total_vocab, value_vocab = Vocabulary(total, total_floor), Vocabulary(values, value_floor)
     pickle_dump(directory + 'vocabs/tags', tag_vocab), pickle_dump(directory + 'vocabs/keys', key_vocab)
     pickle_dump(directory + 'vocabs/values', value_vocab), pickle_dump(directory + 'vocabs/total', total_vocab)
     return tag_vocab, key_vocab, value_vocab, total_vocab
