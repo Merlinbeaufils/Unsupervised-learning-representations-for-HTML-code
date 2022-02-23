@@ -1,18 +1,14 @@
 # from typing import List, Tuple
 import random
 from typing import Tuple, List
-from argparse import Namespace
 
-from torch import Tensor
-from torch.utils.data import DataLoader
+from torch import Tensor, LongTensor
 from torch.utils.data import Dataset
 
-from project.current.parsing import pickle_load, pickle_dump
-from project.current.sparsing import random_sparse
-from project.current.frequency import Vocabulary
-from project.current.tree_tokenizer import Node_Tokens, Tree_Tokens, BaseTokenizer, KeyOnlyTokenizer,TreeTokenizer
-from project.current.parsing import HtmlNode
-
+from project.frequency import Vocabulary
+from project.parsing import HtmlNode
+from project.sparsing import random_sparse
+from project.tree_tokenizer import Node_Tokens, Tree_Tokens, BaseTokenizer, KeyOnlyTokenizer, TreeTokenizer
 
 Sample = Tuple[Node_Tokens, Tree_Tokens]
 Samples = List[Sample]
@@ -23,23 +19,25 @@ PAD_VALUE = 0
 
 class BaseTreeDataset(Dataset):  # Tree dataset class allowing handling of html trees
     def __init__(self, trees: List[HtmlNode], vocabs: List[Vocabulary],
-                 indexes_length=1000, total: bool = False, key_only: bool = False):
+                 indexes_length=1000, total: bool = False, key_only: bool = False,
+                 build_samples: bool = True):
         # indexes is a list of (tree_path_index, tree_index) tuples indicating (node, tree)
         super().__init__()
         self.trees:   Forest = trees
-        self.samples: List[Tuple[Node_Tokens, Tree_Tokens]] = []
+        self.samples = []
         self.tree_max: int = 0
         self.node_max: int = 0
         self.total = total
         self.key_only = key_only
         self.node_tokenizer, self.tree_tokenizer = self.set_tokenizers(vocabs=vocabs)
-        self.indexes = self.build_indexes(indexes_length)
-        self.build_samples(self.indexes)
-        self.padding_tokens()
+        if build_samples:
+            self.indexes = self.build_indexes(indexes_length)
+            self.build_samples(self.indexes)
+            self.padding_tokens()
 
     def __getitem__(self, index: int) -> TensorizedSample:  # returns a (subtree, tree) pair. Tokenized
         token_node, token_tree = self.samples[index]
-        return Tensor(token_node), Tensor(token_tree)
+        return LongTensor(token_node), LongTensor(token_tree)
 
     def __len__(self) -> int:  # returns # of samples
         return len(self.indexes)
@@ -52,6 +50,7 @@ class BaseTreeDataset(Dataset):  # Tree dataset class allowing handling of html 
                 if len(indexes) == indexes_length:
                     random.shuffle(indexes)
                     print('done with indexes. Length: ', len(indexes))
+                    random.shuffle(indexes)
                     return indexes
         random.shuffle(indexes)
         print('done with indexes. Length: ', len(indexes))

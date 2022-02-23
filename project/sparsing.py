@@ -1,6 +1,6 @@
 import random
 
-from project.current.parsing import HtmlNode
+from project.parsing import HtmlNode
 
 
 def random_sparse(tree: HtmlNode, goal_size): # reduce number of nodes in tree to at most goal_size

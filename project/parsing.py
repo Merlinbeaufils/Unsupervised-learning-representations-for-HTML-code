@@ -13,20 +13,27 @@ class MyHTMLParser(HTMLParser):
         super().__init__()
         # addressing omittable start tags
         self.tree: HtmlNode = HtmlNode("html", attrs=[], father=None, depth=0)
-        self.head: HtmlNode = HtmlNode("head", attrs=[], father=self.tree, depth=1)
-        self.body: HtmlNode = HtmlNode("body", attrs=[], father=self.tree, depth=1)
+        self.head: HtmlNode = HtmlNode("head", attrs=[], father=self.tree, depth=1, child_index=0)
+        self.body: HtmlNode = HtmlNode("body", attrs=[], father=self.tree, depth=1, child_index=1)
         self.tree.children = [self.body, self.head]
         self.node_stack = [self.tree, self.head]
 
     def handle_starttag(self, tag, attrs):
         if tag.lower() not in ["html", "head", "body"]:
             father = self.node_stack[-1]
-            node = HtmlNode(tag=tag.lower(), attrs=attrs, father=father, children=[])
+            node = HtmlNode(tag=tag.lower(), attrs=attrs, father=father, children=[], child_index=len(father.children))
             node.depth = len(self.node_stack)
             father.children.append(node)
             self.node_stack.append(node)
         elif tag.lower() == "body":
             self.node_stack.append(self.body)
+            self.body.attrs = attrs
+
+        elif tag.lower() == 'html':
+            self.tree.attrs = attrs
+
+        elif tag.lower() == 'head':
+            self.head.attrs = attrs
 
         if tag in void_tags:
             self.node_stack.pop()
@@ -79,7 +86,7 @@ class MyHTMLParser(HTMLParser):
 
 class HtmlNode:
     def __init__(self, tag="", attrs: List[Tuple[str, str]] = None,
-                 father=None, children: List = None, depth=0, mask_val=0):
+                 father=None, children: List = None, depth=0, mask_val=0, child_index=0):
         if children is None:
             children = []
         if attrs is None:
@@ -93,7 +100,8 @@ class HtmlNode:
         self.sim_string = 1
         self.path: List[HtmlNode] = []
         self.mask_val: int = mask_val
-        self.temp_tag, self.temp_attrs, self.temp_data = '', [], ''
+        self.temp_tag, self.temp_attrs, self.temp_data, self.temp_children = '', [], '', []
+        self.child_index = child_index
         # self.total_children = 0
         # self.next = [None for x in range(self.total_children)]
         # self.leaf = False
@@ -104,6 +112,7 @@ class HtmlNode:
     def __setitem__(self, tag, node):
         setattr(self, tag, node)
 
+    '''
     def __str__(self):
         indent = " " * 4 * self.depth
         children_str = "\n".join(map(str, self.children))
@@ -114,6 +123,16 @@ class HtmlNode:
         else:
             return indent + "Node: %s, attrs: %s, data: %s,  depth: %s %s" % (
                 self.tag, self.attrs, self.data, self.depth, children_str)
+    '''
+    def __str__(self):
+        # root_depth = self.depth if root_depth == -1 else root_depth
+        indent = " " * 4 * self.depth
+        children_str = "\n".join(map(str, self.children))
+        if children_str:
+            children_str = "\n" + children_str
+        if self.sim_string:
+            attributes = " ".join(['%s="%s"' % (key, value) for key, value in self.attrs])
+            return indent + "<%s %s> %s %s </%s>" % (self.tag, attributes, self.data.strip(), children_str, self.tag)
 
     def __bool__(self):
         return bool(self.children)
@@ -139,17 +158,25 @@ class HtmlNode:
             self.path = path
             return self.path
 
-    def mask(self, tree_path_index):
-        self.path[tree_path_index].mask_self()
+    def mask(self, tree_path_index):  # Dont use
+        """ Don't use this """
+        target_node = self.path[tree_path_index]
+        self.masked_father = target_node.father
+        self.masked_child_index = target_node.child_index
+
+        target_node.mask_self()
+
 
     def mask_self(self):
         self.temp_tag = self.tag
         self.temp_attrs = self.attrs.copy()
         self.temp_data = self.data
-        self.tag = "mask"
+        self.temp_children = self.children
+        self.tag = '<mask>'
         self.attrs.clear()
         self.data = ''
         self.mask_val = 1
+        self.children = []
 
     def unmask_self(self):
         self.tag = self.temp_tag
@@ -160,11 +187,32 @@ class HtmlNode:
         self.temp_attrs = []
         self.mask_val = 0
 
+    def affected(self) -> List:
+        full = [self]
+        for child in self.children:
+            full += child.affected()
+        return full
+
+    def mask_affected(self):
+        self.mask_val = 1
+        for child in self.children:
+            child.mask_affected()
+
+    def unmask_affected(self):
+        self.mask_val = 0
+        for child in self.children:
+            child.mask_affected()
+
+
+
+
+
 
 def string_to_tree(string: str) -> HtmlNode:
     parser = MyHTMLParser()
     parser.feed(string)
     parser.tree.build_path()
+    [parser.tree.children.remove(x) for x in parser.tree.children if x.tag.lower() not in ['head', 'body']]
     return parser.tree
 
 
@@ -191,4 +239,7 @@ def pickle_dump(directory: str, item: any) -> None:
 
 def pickle_load(directory: str) -> any:
     with open(directory, 'rb') as handle:
-        return pickle.load(handle)
+        try:
+            return pickle.load(handle)
+        except:
+            print('Could not load handle: ', handle)

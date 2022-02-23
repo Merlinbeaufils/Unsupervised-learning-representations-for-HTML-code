@@ -1,24 +1,25 @@
+import os
 from argparse import Namespace, ArgumentParser
 from typing import Tuple, List
-import os
 
-from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning import Trainer
-from torch.utils.data import DataLoader, random_split
-from project.current.dataloading import BaseTreeDataset, ContTreeDataset
-from project.current.frequency import build_trees, build_vocabularies, build_files
-from project.current.parsing import pickle_dump, pickle_load, HtmlNode
-from project.current.sparsing import random_sparse, sparse_depth
-from project.models.model_pipe import FlatEmbedding, SimpleLinear, FlatEmbeddingAndLinear
 import torch
+from pytorch_lightning import Trainer
+from pytorch_lightning.loggers import TensorBoardLogger
+from torch.utils.data import DataLoader, random_split
+
+from project.dataloading import BaseTreeDataset, ContTreeDataset
+from project.frequency import build_trees, build_vocabularies, build_files, Vocabulary
+from project.model_pipe import BaseModel
+from project.models.flat_bow import FlatEmbedding, SimpleLinear, FlatEmbeddingAndLinear
+from project.parsing import pickle_dump, pickle_load, HtmlNode
+from project.sparsing import random_sparse, sparse_depth
+from project.tree_tokenizer import BaseTokenizer
 
 torch.manual_seed(1)
 
-# Locations of relevant objects
-from project.models.model_pipe import BaseModel
-
 file_loc = './data/'
-models_loc = './project/models/'  # models
+
+#models_loc = './project/models/'  # models
 
 
 def reduce_trees(reduction: str, trees: List[HtmlNode], args: Namespace) -> None:
@@ -38,12 +39,13 @@ def reduce_trees(reduction: str, trees: List[HtmlNode], args: Namespace) -> None
 
 def set_models(model_type: str, vocab, dataset, embedding_dim=600, learning_rate=1e-4):
     num_embeddings = len(vocab) + 40
-    if model_type == 'lin':
-        submodel = SimpleLinear(in_features=num_embeddings, out_features=embedding_dim)
-    elif model_type == 'flat':
+    # if model_type == 'lin':
+    #     submodel = SimpleLinear(in_features=num_embeddings, out_features=embedding_dim)
+    # elif model_type == 'flatlin':
+    #     submodel = FlatEmbeddingAndLinear(num_embeddings=num_embeddings, embedding_dim=embedding_dim)
+    if model_type == 'flat':
         submodel = FlatEmbedding(num_embeddings=num_embeddings, embedding_dim=embedding_dim)
-    elif model_type == 'flatlin':
-        submodel = FlatEmbeddingAndLinear(num_embeddings=num_embeddings, embedding_dim=embedding_dim)
+        #submodel = FlatSum()
     else:
         raise NoModel
     model = BaseModel(dataset=dataset, tree_model=submodel, lr=learning_rate)
@@ -107,16 +109,26 @@ def main(args: Namespace) -> None:
 
         reduce_trees(args.reduction, args.trees, args)
 
+        if args.stop:
+            raise Stop
+
         train_dataloader, test_dataloader, dataset = set_dataloader(dataloader=args.dataloader, trees=args.trees,
                                                                     indexes_size=args.indexes_size,
                                                                     train_proportion=args.train_proportion, args=args)
+
 
     train_features, train_labels = next(iter(train_dataloader))
     test_features, test_labels = next(iter(train_dataloader))
     feature, label = train_features[0], train_labels[0]
 
-    basemodel, submodel = set_models(model_type=args.model_type, vocab=args.total, dataset=dataset, learning_rate=args.lr)
-    logger = TensorBoardLogger('tb_logs', name='my_model')
+    basemodel = BaseModel(dataset=dataset, tree_model_type=args.tree_model_type, vocab_size=len(args.total),
+                          node_model_type=args.node_model_type, optimizer_type=args.optimizer, batch_size=args.batch_size,
+                          lr=args.lr, loss_type=args.loss, similarity_type=args.similarity,
+                          train_proportion=args.train_proportion)
+
+    # basemodel, submodel = set_models(model_type=args.model_type,
+    #                                  vocab=args.total, dataset=dataset, learning_rate=args.lr)
+    logger = TensorBoardLogger('tb_logs', name=args.node_model_type)
     trainer = Trainer(
         gpus=0,
         logger=[logger],
@@ -125,13 +137,28 @@ def main(args: Namespace) -> None:
     trainer.fit(basemodel)
     pass
 
-    # train_features, train_labels = next(iter(train_dataloader))
-    # test_features, test_labels = next(iter(test_dataloader))
+
+def test_some_stuff():
+    total_vocab: Vocabulary = pickle_load('./data/common_sites/vocabs/total')
+    # train_dataloader = pickle_load('./data/common_sites/dataloaders/train_base')
+    trees = pickle_load('./data/common_sites/trees/trees')
+    indexes_size = 100
+    vocabs = [total_vocab]
+    dataset = BaseTreeDataset(trees=trees, indexes_length=indexes_size,
+                              total=True, key_only=True, vocabs=vocabs)
+    # dataset = pickle_load('./data/common_sites/dataloaders/dataset_base')
+    train_dataloader = DataLoader(dataset, 1, True)
+    features, labels = next(iter(train_dataloader))
+    feature, label = features[0], labels[0]
+    tokenizer = BaseTokenizer(vocabs=[total_vocab], total=True)
+    node = tokenizer.back_to_node(feature)
+    tree = tokenizer.back_to_tree(label)
+    print('hi')
 
 
 if __name__ == "__main__":
     parser = ArgumentParser(description='Process specifications')
-    parser.add_argument('--pickle_trees', default=True)
+    parser.add_argument('--pickle_trees', action='store_true')
     parser.add_argument('--folder_name', type=str, default='common_sites')
     parser.add_argument('--reduction', type=str, default='random')
     parser.add_argument('--build_vocabs', action='store_true')
@@ -149,14 +176,26 @@ if __name__ == "__main__":
     parser.add_argument('--key_other', type=int, default=0)
     parser.add_argument('--value_other', type=int, default=0)
     parser.add_argument('--skip_setup', action='store_true')
-    parser.add_argument('--model_type', type=str, default='flatlin')
+    parser.add_argument('--tree_model_type', type=str, default=None)
+    parser.add_argument('--node_model_type', type=str, default='flat')
     parser.add_argument('--dataloader', type=str, default='base')
     parser.add_argument('--total_floor', type=int, default=2)
     parser.add_argument('--key_only', action='store_true')
     parser.add_argument('--total_vocab', action='store_true')
+    parser.add_argument('--optimizer', type=str, default='sgd')
+    parser.add_argument('--loss', type=str, default='cross_entropy')
+    parser.add_argument('--similarity', type=str, default='cosine')
     parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--max_depth', type=int, default=10)
+    parser.add_argument('--goal_size', type=int, default=500)
+    parser.add_argument('--stop', action='store_true')
+    parser.add_argument('--test', action='store_true')
+
     names: Namespace = parser.parse_args()
+    names.total_vocab = True  # change this at some point
+    if names.test:
+        test_some_stuff()
     main(names)
 
 
@@ -174,3 +213,9 @@ class NoModel(Exception):
 
 class NoDataloader(Exception):
     pass
+
+
+class Stop(Exception):
+    pass
+
+

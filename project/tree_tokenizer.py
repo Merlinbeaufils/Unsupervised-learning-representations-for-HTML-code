@@ -1,11 +1,10 @@
+import itertools
 from argparse import Namespace
 from typing import List
 
-from project.current.parsing import HtmlNode
-from project.current.frequency import  Vocabulary
-import itertools
+from project.frequency import Vocabulary
+from project.parsing import HtmlNode
 from torch import Tensor
-
 build_vocab = 0
 Node_Tokens = List[int]
 Tree_Tokens = List[Node_Tokens]
@@ -17,13 +16,15 @@ class BaseTokenizer:
     def __init__(self, vocabs: List[Vocabulary], total=False):
         self.offset = 0
         if total:
-            self.set_total_vocab(vocabs[0])
-            self.offset = len(vocabs[0])
+            total_vocab = vocabs[0]
+            self.tags, self.keys, self.values = total_vocab, total_vocab, total_vocab
+            self.offset = len(total_vocab)
         else:
             self.tags = vocabs[0]
             self.keys = vocabs[1]
             self.values = vocabs[2]
-
+        self.vocabs = vocabs
+        self.total = total
 
     def __call__(self, node: HtmlNode) -> List[int]:
         depth = self.handle_depth(node.depth)
@@ -44,9 +45,64 @@ class BaseTokenizer:
     def handle_data(self, data: str) -> List[int]:
         return []
 
-    def set_total_vocab(self, total: Vocabulary) -> None:
-        self.tags, self.keys, self.values = total, total, total
-        self.offset = len(total)
+    def back_to_node(self, node_token: Tensor) -> HtmlNode:
+        tag_vocab, key_vocab, value_vocab = self.vocabs * 3 if self.total else self.vocabs
+        attrs = []
+        for i, val in enumerate(node_token):
+            val = int(val)
+            if i == 0:
+                depth = node_token[0]
+            elif i == 1:
+                tag = tag_vocab.reverse(val)
+            elif i % 2 == 0:
+                attrs.append((key_vocab.reverse(val), value_vocab.reverse(node_token[i + 1])))
+        return HtmlNode(depth=depth, tag=tag, attrs=attrs)
+
+    def back_to_tree(self, tree_token) -> HtmlNode:
+        path = [self.back_to_node(node_token) for node_token in tree_token]
+        depths = [node.depth for node in path]
+        # print([node.tag for node in path])
+        # print(depths)
+        for child_index, child_node in enumerate(path):
+            for depth_index, depth in enumerate(depths):
+                if depth_index >= child_index + 1 and depth == child_node.depth - 1:
+                    # print('indexes: ', depth_index, depth)
+                    # print('child_index: ', child_index)
+                    path[depth_index].children.append(child_node)
+                    break
+        root = path[-1]
+        root.build_path()
+        return root
+
+
+class TransformerTreeTokenizer(BaseTokenizer):
+    def __init__(self, total_vocab):
+        super().__init__([total_vocab], total=True)
+        self.IGNORE_IDX = total_vocab["<ignore>"]
+        self.MASK_IDX = total_vocab["<mask>"]
+        self.OOV_IDX = total_vocab["<oov>"]
+        self.EON_IDX = total_vocab["<eon>"]
+        self.SON_IDX = total_vocab["<son>"]
+
+    def __call__(self, tree: HtmlNode):
+        feature, label = [], []
+        for node in tree.path:
+            node_f, node_l = self.handle_node(node)
+            feature += node_f
+            label += node_l
+        assert len(feature) == len(label)
+        return feature, label
+
+    def handle_node(self, node):
+        node_token = [self.SON_IDX] + super().__call__(node) + [self.EON_IDX]
+        if node.mask_val:
+            label = node_token
+            feature = [self.MASK_IDX] * len(label)
+        else:
+            feature = node_token
+            label = [self.IGNORE_IDX] * len(feature)
+        return feature, label
+
 
 
 class KeyOnlyTokenizer(BaseTokenizer):
@@ -63,8 +119,6 @@ class TreeTokenizer:
 
     def __call__(self, tree: HtmlNode) -> List[List[int]]:
         return [self.node_tokenizer(node) for node in tree.path]
-
-
 
 
 

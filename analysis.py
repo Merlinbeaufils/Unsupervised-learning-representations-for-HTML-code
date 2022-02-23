@@ -1,5 +1,4 @@
-from project.current.frequency import *
-from project.current.parsing import pickle_load
+from project.parsing import pickle_load
 
 
 def function():
