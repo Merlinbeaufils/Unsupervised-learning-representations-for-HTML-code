@@ -9,6 +9,9 @@ void_tags = ["area", "base", "br", "col", "command", "embed", "hr", "img", "inpu
 
 
 class MyHTMLParser(HTMLParser):
+    """
+    Parser to build trees from html file
+    """
     def __init__(self):
         super().__init__()
         # addressing omittable start tags
@@ -87,6 +90,16 @@ class MyHTMLParser(HTMLParser):
 class HtmlNode:
     def __init__(self, tag="", attrs: List[Tuple[str, str]] = None,
                  father=None, children: List = None, depth=0, mask_val=0, child_index=0):
+        """
+        Tree structure to represent files
+        :param tag: element tag
+        :param attrs: list of (key,value) attribute pairs
+        :param father: father node
+        :param children: list of children nodes
+        :param depth: depth in the tree
+        :param mask_val: Denotes whether this node was masked
+        :param child_index: Index of child in parent node
+        """
         if children is None:
             children = []
         if attrs is None:
@@ -147,6 +160,10 @@ class HtmlNode:
             return self.tag
 
     def build_path(self):
+        """
+        Builds the post-order path through the tree
+        :return: None
+        """
         path: List[HtmlNode] = []
         if not self.children:
             self.path = [self]
@@ -188,27 +205,31 @@ class HtmlNode:
         self.mask_val = 0
 
     def affected(self) -> List:
+        """ return list of dependent nodes """
         full = [self]
         for child in self.children:
             full += child.affected()
         return full
 
     def mask_affected(self):
+        """ mask all affected nodes including itself """
         self.mask_val = 1
         for child in self.children:
             child.mask_affected()
 
     def unmask_affected(self):
+        """ unmask all affected nodes including itself """
         self.mask_val = 0
         for child in self.children:
             child.mask_affected()
 
 
-
-
-
-
 def string_to_tree(string: str) -> HtmlNode:
+    """
+    Build tree from a string
+    :param string: html string
+    :return: Node representing tree
+    """
     parser = MyHTMLParser()
     parser.feed(string)
     parser.tree.build_path()
@@ -221,6 +242,11 @@ def strings_to_trees(strings: List[str]) -> List[HtmlNode]:
 
 
 def dir_to_str(directory: str) -> [str]:
+    """
+    Builds list of strings from directory of html files
+    :param directory: directory of html files
+    :return: list of strings
+    """
     strings = []
     for filename in os.listdir(directory):
         f = os.path.join(directory, filename)
@@ -233,11 +259,13 @@ def dir_to_str(directory: str) -> [str]:
 
 
 def pickle_dump(directory: str, item: any) -> None:
+    """ Pickles a file into a given directory """
     with open(directory, 'wb') as handle:
         pickle.dump(item, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def pickle_load(directory: str) -> any:
+    """ Loads a pickled file from a given directory """
     with open(directory, 'rb') as handle:
         try:
             return pickle.load(handle)

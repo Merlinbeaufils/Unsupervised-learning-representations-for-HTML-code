@@ -16,6 +16,11 @@ PAD_VALUE = 0
 
 class BaseTokenizer:
     def __init__(self, vocabs: List[Vocabulary], total=False):
+        """
+        Class to tokenize trees into nested lists of ints
+        :param vocabs: vocab for tokenization
+        :param total: if True, use one joint vocab, not separate vocabs
+        """
         self.offset = 0
         if total:
             total_vocab = vocabs[0]
@@ -48,6 +53,8 @@ class BaseTokenizer:
         return []
 
     def back_to_node(self, node_token: Tensor) -> HtmlNode:
+        """ Build node back from token
+        Dont use"""
         tag_vocab, key_vocab, value_vocab = self.vocabs * 3 if self.total else self.vocabs
         attrs = []
         for i, val in enumerate(node_token):
@@ -61,6 +68,8 @@ class BaseTokenizer:
         return HtmlNode(depth=depth, tag=tag, attrs=attrs)
 
     def back_to_tree(self, tree_token) -> HtmlNode:
+        """ Build tree from token
+        Dont use"""
         path = [self.back_to_node(node_token) for node_token in tree_token]
         depths = [node.depth for node in path]
         # print([node.tag for node in path])
@@ -79,6 +88,10 @@ class BaseTokenizer:
 
 class TransformerTreeTokenizer(BaseTokenizer):
     def __init__(self, total_vocab):
+        """
+        Builds 1d token with end-of-node and start-of-node tags.
+        :param total_vocab: joint vocab
+        """
         super().__init__([total_vocab], total=True)
         self.IGNORE_IDX = total_vocab["<ignore>"]
         self.MASK_IDX = total_vocab["<mask>"]

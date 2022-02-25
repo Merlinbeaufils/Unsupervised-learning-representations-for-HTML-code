@@ -131,6 +131,7 @@ class TransformerTreeDataset(BaseTreeDataset):
     # Init dataset
     def __init__(self, trees: List[HtmlNode], total_vocab: Vocabulary,
                  indexes_length=1000, key_only=False, max_seq_len=512):
+
         super().__init__(trees=trees, vocabs=[total_vocab],
                          indexes_length=indexes_length, total=True,
                          key_only=key_only, build_samples=False)

@@ -10,6 +10,13 @@ tensorboard and loading models
 - The __jupyter notebook__ - is for circumventing certain 
 environment limitations of my local machine.
 
+## Scripts
+Set num_gpus, num_cpus, chdir depending on local environment
+
+bow_basic_run.sh trains a bow model
+lstm_basic_run.sh trains a lstm model
+transformer_basic_run.sh trains a transformer model
+
 ### Description
 I will investigate techniques to learn representations of websites. In particular, I will use self-supervised learning to train models using NLP algorithms (like masked language modeling) to learn vector
 representations. These representations should hold sufficient information to use them for several
