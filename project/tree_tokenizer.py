@@ -2,9 +2,11 @@ import itertools
 from argparse import Namespace
 from typing import List
 
+from torch import Tensor
+
 from project.frequency import Vocabulary
 from project.parsing import HtmlNode
-from torch import Tensor
+
 build_vocab = 0
 Node_Tokens = List[int]
 Tree_Tokens = List[Node_Tokens]

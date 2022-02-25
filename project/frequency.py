@@ -2,6 +2,7 @@ import os
 from html.parser import HTMLParser
 from typing import Dict
 from typing import Tuple, List
+
 from torch import LongTensor
 
 from project.parsing import dir_to_str, strings_to_trees, pickle_dump, HtmlNode
@@ -10,6 +11,13 @@ OTHER: int = 0  # other value is currently 0
 
 
 class Vocabulary(dict):  # Abstract dict class creating a tokenizing map from a frequency_dicts dictionary
+    """
+    Slightly more complex dict class to be used as a vocabulary
+
+    Returns out of vocab value when key is not found.
+
+    Automatically implements oov, ignore and mask tokens
+    """
     def __init__(self, freq: dict, floor: int = 10):
         super().__init__()
         self.__setitem__('<oov>', 0)
@@ -40,6 +48,9 @@ class Vocabulary(dict):  # Abstract dict class creating a tokenizing map from a 
 
 
 class FreqParser(HTMLParser):
+    """
+    Builds text of tags, data, keys, values and everything-combined while parsing html file.
+    """
     def __init__(self, tf, df, kf, vf, total_f, key_only=False):
         super().__init__()
         self.tf = tf
@@ -70,6 +81,14 @@ class FreqParser(HTMLParser):
 
 
 def build_files(start_directory, end_directory, key_only=False) -> None:
+    """
+    Builds files for building vocabs and frequency analysis
+
+    :param start_directory: takes html files from this directory
+    :param end_directory: places text files at this directory
+    :param key_only: disregards "values" totally (reduces complexity of data)
+    :return: None
+    """
     os.makedirs(end_directory, mode=0o777, exist_ok=True)
     with open(end_directory + "/tags.txt", 'w', errors='ignore') as tag_f, \
          open(end_directory + "/keys.txt", 'w', errors='ignore') as key_f, \
@@ -83,6 +102,12 @@ def build_files(start_directory, end_directory, key_only=False) -> None:
 
 
 def build_trees(directory, Pickle_trees: bool=False) -> List[HtmlNode]:
+    """
+    Builds trees from the given directory
+    :param directory: html file directory
+    :param Pickle_trees: Pickle trees into memory at directory/trees/trees
+    :return: List of trees as HtmlNodes
+    """
     strings = dir_to_str(directory)
     trees = strings_to_trees(strings)
     os.makedirs(directory + 'trees', mode=0o777, exist_ok=True)
@@ -92,6 +117,12 @@ def build_trees(directory, Pickle_trees: bool=False) -> List[HtmlNode]:
 
 
 def word_count(file_in: str, pickle_file: str) -> Dict[str, int]:
+    """
+    Creates frequency dictionaries from the built text file
+    :param file_in: Text file to process
+    :param pickle_file: pickle at this directory
+    :return: Ordered dictionary with frequencies of words in the text file
+    """
     with open(file_in, 'r') as file:
         dictionary = {}
         words = file.read().split()
@@ -108,6 +139,16 @@ def word_count(file_in: str, pickle_file: str) -> Dict[str, int]:
 
 def build_vocabularies(directory, tag_floor=2, key_floor=2, value_floor=2, total_floor=10)\
         -> Tuple[Vocabulary, Vocabulary, Vocabulary, Vocabulary]:
+    """
+    Make sure to build text files before
+    Builds vocabularies from directory of text files.
+    :param directory:
+    :param tag_floor: minimum for tags
+    :param key_floor: minimum for keys
+    :param value_floor: minimum for values
+    :param total_floor: minimum for total_vocab
+    :return: Tag vocabuly, key vocabulary, value vocabulary, total vocabulry
+    """
     os.makedirs(directory + 'frequency_dict', mode=0o777, exist_ok=True)
     os.makedirs(directory + 'vocabs', mode=0o777, exist_ok=True)
     keys = word_count(directory + 'text_files/keys.txt', directory + 'frequency_dict/key_freq')

@@ -7,69 +7,85 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
 from torch.utils.data import DataLoader, random_split
 
-from project.dataloading import BaseTreeDataset, ContTreeDataset
+from project.dataloading import BaseTreeDataset, ContTreeDataset, TransformerTreeDataset
 from project.frequency import build_trees, build_vocabularies, build_files, Vocabulary
 from project.model_pipe import BaseModel
-from project.models.flat_bow import FlatEmbedding, SimpleLinear, FlatEmbeddingAndLinear
+from project.models.transformer_implementation import TransformerModule
 from project.parsing import pickle_dump, pickle_load, HtmlNode
-from project.sparsing import random_sparse, sparse_depth
+from project.sparsing import random_sparse, sparse_depth, length_depth_reduction
 from project.tree_tokenizer import BaseTokenizer
 
 torch.manual_seed(1)
 
 file_loc = './data/'
 
-#models_loc = './project/models/'  # models
-
 
 def reduce_trees(reduction: str, trees: List[HtmlNode], args: Namespace) -> None:
     if reduction == 'random':
         function = random_sparse
-        goal_size = args.goal_size
+        kwargs = {'goal_size':args.goal_size}
     elif reduction == 'depth':
         function = sparse_depth
-        goal_size = args.max_depth
+        kwargs = {'depth': args.max_depth}
+    elif reduction == 'both':
+        function = length_depth_reduction
+        kwargs = {'goal_size': args.goal_size, 'depth': args.max_depth}
     else:
         raise NoReduction
     for tree in trees:
-        function(tree, goal_size)
+        function(tree, **kwargs)
     pickle_dump(directory=args.setup_location + 'trees/trees_short', item=trees)
     args.reduction_function = function
 
 
-def set_models(model_type: str, vocab, dataset, embedding_dim=600, learning_rate=1e-4):
-    num_embeddings = len(vocab) + 40
-    # if model_type == 'lin':
-    #     submodel = SimpleLinear(in_features=num_embeddings, out_features=embedding_dim)
-    # elif model_type == 'flatlin':
-    #     submodel = FlatEmbeddingAndLinear(num_embeddings=num_embeddings, embedding_dim=embedding_dim)
-    if model_type == 'flat':
-        submodel = FlatEmbedding(num_embeddings=num_embeddings, embedding_dim=embedding_dim)
-        #submodel = FlatSum()
+def set_model(args, dataset):
+    config = args.configuration.lower()
+    if config.lower() in ['bow', 'lstm']:
+        node_model, tree_model = ('bow', None) if config == 'bow' else ('bow', 'lstm')
+        kwargs = {'dataset': dataset, 'node_model_type': node_model,
+                  'vocab_size': len(args.total), 'tree_model_type': tree_model,
+                  'optimizer_type': args.optimizer, 'batch_size': args.batch_size,
+                  'lr': args.lr, 'loss_type': args.loss, 'similarity_type': args.similarity,
+                  'embedding_dim': args.embedding_dim, 'train_proportion': args.train_proportion,
+                  'num_cpus': args.num_cpus}
+        model = BaseModel(**kwargs)
+    elif config == 'transformer':
+        kwargs = {'n_code': args.n_code, 'n_heads': args.n_heads, 'embed_size': args.embedding_dim,
+                  'inner_ff_size': args.embedding_dim * 4,
+                  'n_embeddings': len(dataset.vocab) + args.max_depth,
+                  'max_seq_len': args.max_seq_len, 'dropout': args.dropout}
+
+        optim_kwargs = {'lr': args.lr, 'weight_decay': args.weight_decay, 'betas': (.9, .999)}
+
+        loader_kwargs = {'num_workers': args.num_cpus, 'shuffle': args.shuffle, 'drop_last': args.drop_last,
+                         'pin_memory': args.pin_memory, 'batch_size': args.batch_size}
+        model = TransformerModule(dataset, kwargs=kwargs, optim_kwargs=optim_kwargs, loader_kwargs=loader_kwargs)
     else:
         raise NoModel
-    model = BaseModel(dataset=dataset, tree_model=submodel, lr=learning_rate)
-    return model, submodel
+    return model
 
 
 def set_dataloader(dataloader: str, trees: List[HtmlNode], indexes_size: int,
                    train_proportion: int, args: Namespace) -> Tuple[
     DataLoader, DataLoader, BaseTreeDataset]:
     vocabs = [args.total] if args.total_vocab else [args.tags, args.keys, args.values]
+    vocab = args.total
     if dataloader == 'base':
         dataset = BaseTreeDataset(trees=trees, indexes_length=indexes_size,
                                   total=True, key_only=True, vocabs=vocabs)
-        train_size = int(train_proportion * len(dataset))
-        test_size = len(dataset) - train_size
-        train_data, test_data = random_split(dataset, [train_size, test_size])
+
     elif dataloader == 'Cont':
         dataset = ContTreeDataset(trees=trees, indexes_length=indexes_size,
                                   total=True, key_only=True, vocabs=vocabs)
-        train_size = int(train_proportion * len(dataset))
-        test_size = len(dataset) - train_size
-        train_data, test_data = random_split(dataset, [train_size, test_size])
+
+    elif dataloader == 'transformer':
+        dataset = TransformerTreeDataset(trees=trees, total_vocab=vocab, indexes_length=indexes_size,
+                                         key_only=False, max_seq_len=args.max_seq_len)
     else:
         raise NoDataloader
+    train_size = int(train_proportion * len(dataset))
+    test_size = len(dataset) - train_size
+    train_data, test_data = random_split(dataset, [train_size, test_size])
     train_dataloader, test_dataloader = DataLoader(train_data, batch_size=64, shuffle=True), \
                                         DataLoader(test_data, batch_size=64, shuffle=True)
     os.makedirs(args.setup_location + 'dataloaders', mode=0o777, exist_ok=True)
@@ -121,20 +137,17 @@ def main(args: Namespace) -> None:
     test_features, test_labels = next(iter(train_dataloader))
     feature, label = train_features[0], train_labels[0]
 
-    basemodel = BaseModel(dataset=dataset, tree_model_type=args.tree_model_type, vocab_size=len(args.total),
-                          node_model_type=args.node_model_type, optimizer_type=args.optimizer, batch_size=args.batch_size,
-                          lr=args.lr, loss_type=args.loss, similarity_type=args.similarity,
-                          train_proportion=args.train_proportion)
+    model = set_model(args, dataset)
 
-    # basemodel, submodel = set_models(model_type=args.model_type,
-    #                                  vocab=args.total, dataset=dataset, learning_rate=args.lr)
-    logger = TensorBoardLogger('tb_logs', name=args.node_model_type)
+    logger = TensorBoardLogger('res_and_ckpts/tb_logs', name=args.node_model_type)
+    if args.num_gpus > 0:
+        model = model.cuda()
     trainer = Trainer(
-        gpus=0,
+        gpus=args.num_gpus,
         logger=[logger],
-        max_epochs=5
+        max_epochs=args.num_epochs
     )
-    trainer.fit(basemodel)
+    trainer.fit(model)
     pass
 
 
@@ -191,6 +204,22 @@ if __name__ == "__main__":
     parser.add_argument('--goal_size', type=int, default=500)
     parser.add_argument('--stop', action='store_true')
     parser.add_argument('--test', action='store_true')
+    parser.add_argument('--num_epochs', type=int, default=5)
+    parser.add_argument('--num_gpus', type=int, default=0)
+    parser.add_argument('--num_cpus', type=int, default=2)
+    parser.add_argument('--configuration', type=str, default='bow')
+    parser.add_argument('--embedding_dim', type=int, default=60)
+    parser.add_argument('--pin_memory', type=bool, default=True)
+    parser.add_argument('--drop_last', type=bool, default=True)
+    parser.add_argument('--shuffle', type=bool, default=True)
+    parser.add_argument('--n_code', type=int, default=8)
+    parser.add_argument('--n_heads', type=int, default=8)
+    parser.add_argument('--droupout', type=float, default=0.1)
+    parser.add_argument('--max_seq_len', type=int, default=512)
+    parser.add_argument('--weight_decay', type=float, default=1e-4)
+    parser.add_argument('--dropout', type=float, default=0.1)
+
+
 
     names: Namespace = parser.parse_args()
     names.total_vocab = True  # change this at some point

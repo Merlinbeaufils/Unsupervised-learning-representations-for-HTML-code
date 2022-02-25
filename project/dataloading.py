@@ -8,7 +8,8 @@ from torch.utils.data import Dataset
 from project.frequency import Vocabulary
 from project.parsing import HtmlNode
 from project.sparsing import random_sparse
-from project.tree_tokenizer import Node_Tokens, Tree_Tokens, BaseTokenizer, KeyOnlyTokenizer, TreeTokenizer
+from project.tree_tokenizer import Node_Tokens, Tree_Tokens, BaseTokenizer, KeyOnlyTokenizer, TreeTokenizer, \
+    TransformerTreeTokenizer
 
 Sample = Tuple[Node_Tokens, Tree_Tokens]
 Samples = List[Sample]
@@ -18,6 +19,14 @@ PAD_VALUE = 0
 
 
 class BaseTreeDataset(Dataset):  # Tree dataset class allowing handling of html trees
+    """
+    Dataset to deal with building samples from HtmlNode class
+
+    Indexes cover every possible subtree-tree combination
+    Samples are built before runtime
+
+    build_sample function defines how samples are build from the indexes given
+    """
     def __init__(self, trees: List[HtmlNode], vocabs: List[Vocabulary],
                  indexes_length=1000, total: bool = False, key_only: bool = False,
                  build_samples: bool = True):
@@ -117,6 +126,62 @@ class ContTreeDataset(BaseTreeDataset):  # Samples are of type: (masked_tree, tr
             pad_tree(tree, self.tree_max, self.node_max)
             pad_tree(masked_tree, self.tree_max, self.node_max)
 
+
+class TransformerTreeDataset(BaseTreeDataset):
+    # Init dataset
+    def __init__(self, trees: List[HtmlNode], total_vocab: Vocabulary,
+                 indexes_length=1000, key_only=False, max_seq_len=512):
+        super().__init__(trees=trees, vocabs=[total_vocab],
+                         indexes_length=indexes_length, total=True,
+                         key_only=key_only, build_samples=False)
+
+        self.vocab = total_vocab
+        self.rvocab = total_vocab.reverse_vocab()
+        self.max_seq_len = max_seq_len
+        self.tree_tokenizer = TransformerTreeTokenizer(total_vocab=total_vocab)
+
+        # special tags
+        self.IGNORE_IDX = self.vocab['<ignore>']  # replacement tag for tokens to ignore
+        self.OUT_OF_VOCAB_IDX = self.vocab['<oov>']  # replacement tag for unknown words
+        self.MASK_IDX = self.vocab['<mask>']  # replacement tag for the masked word prediction task
+
+        self.reduce_trees(100)
+        self.indexes = self.build_indexes(indexes_length)
+        self.build_samples(indexes=self.indexes)
+        self.padding_tokens()
+
+    def build_sample(self, tree_index_path, tree_index) -> Tuple[List, List]:
+        # node: HtmlNode = self.trees[tree_index].path[tree_index_path]
+        tree: HtmlNode = self.trees[tree_index]
+        node: HtmlNode = tree.path[tree_index_path]
+        node.mask_affected()
+        tokenized_node, tokenized_tree = self.tree_tokenizer(tree)
+        node.unmask_affected()
+        assert len(tokenized_tree) == len(tokenized_node)
+        self.tree_max = max(len(tokenized_tree), self.tree_max)
+        return tokenized_node, tokenized_tree
+
+    def padding_tokens(self) -> None:
+        # for i, (node_sample, tree_sample) in enumerate(self.samples):
+        #     self.samples[i] = (node_sample[-1 * self.max_seq_len:], tree_sample[-1 * self.max_seq_len:])
+        #     [self.samples[i][0].append(self.IGNORE_IDX) for i in range(self.max_seq_len - len(node_sample))]
+        #     [self.samples[i][1].append(self.IGNORE_IDX) for i in range(self.max_seq_len - len(tree_sample))]
+        # assert len(self.samples[0][0]) == len(self.samples[0][1])
+        for i, (node_sample, tree_sample) in enumerate(self.samples):
+            node_sample, tree_sample = node_sample[-1 * self.max_seq_len:], tree_sample[-1 * self.max_seq_len:]
+            [node_sample.append(self.IGNORE_IDX) for i in range(self.max_seq_len - len(node_sample))]
+            [tree_sample.append(self.IGNORE_IDX) for i in range(self.max_seq_len - len(tree_sample))]
+            self.samples[i] = node_sample, tree_sample
+        assert len(self.samples[0][0]) == len(self.samples[0][1])
+
+    # fetch data
+    def __getitem__(self, index):
+        node_sample, tree_sample = self.samples[index]
+        return LongTensor(node_sample), LongTensor(tree_sample)
+
+    # return length
+    def __len__(self):
+        return len(self.samples)
 
 def pad_tree(tree: List, length_tree: int, length_node: int) -> None:
     for node in tree:

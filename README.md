@@ -1,13 +1,21 @@
 # Thesis
-Bachelor's thesis
+### Learning vector representations of websites
 
+## Structure of repository:
+- __data folder__ - contains different data repos
+- __project__ - folder contains coding modules
+- __run.py__ - trains models with specific configurations specified configurations
+- __res_and_ckpts__ - contains logs and ckpt files for 
+tensorboard and loading models
+- The __jupyter notebook__ - is for circumventing certain 
+environment limitations of my local machine.
 
 ### Description
-I will investigate techniques to learn representations of websites. In particular, I will use selfsupervised learning to train models using NLP algorithms (like masked language modeling) to learn vector
+I will investigate techniques to learn representations of websites. In particular, I will use self-supervised learning to train models using NLP algorithms (like masked language modeling) to learn vector
 representations. These representations should hold sufficient information to use them for several
 downstream tasks, including e.g., analytics and prediction problems.
 The first research step will consist of defining the format of the data to be input into the model, to define
-datastructures, and loaders. Treating HTML code like a tree, current literature suggests tokenizing nodes in a dictionarylike structure.
+datastructures, and loaders. Treating HTML code like a tree, current literature suggests tokenizing nodes in a dictionary-like structure.
 The second step is training deep representation models to encode these trees. To do so, I will use self-supervised
 learning techniques such as masking to train different target and context encoders, eventually giving us a context encoder
 capable of outputting vector representations of entire websites.
@@ -19,10 +27,107 @@ Finally, I will explore downstream uses of the space. While these are infinite, 
 exploring are a next webpage predictor given a current browsing sequence and a click predictor evaluating the probability
 of a user clicking on a website if shown after a search, similar to a ranking algorithm.
 
-### Data
-repository html_files of html files from somewhere
-also common_files the 10 most used websites
+## Data and data formatting
+common_sites folder html files of the 10 most used websites
 
+### Data representation:
+1) Websites are turned from html strings into trees. Each 
+node in the tree represents an element and contains its depth 
+in the tree, its tag, its attributes as a list of (key, value) 
+tuples, and its data. It also keeps track of its father 
+node and list of children nodes.
+
+2) We then deterministically turn the tree into a list using a 
+post-order traversal. Using the depth value of each node, the original
+tree can easily be recovered.
+
+### Tokenizing the trees into samples
+1) We combine the tags, data and the keys, and values from attributes
+as a total vocabulary.
+
+2) We tokenize the trees as a list of tokenized nodes determined 
+by its post-order traversal.
+
+3) Representing each node as a list
+[depth, tag, key, value, key, value,..., key, value, data] we tokenize
+it using the vocabulary. Adding len(vocabulary) to the depth value.
+
+4) I am still in the process of effectively representing the data.
+
+## Modeling approach
+
+We use a masked language modeling framework.
+
+
+tokenized_contexts are of shape (batch_size, tree_size, node_size)
+
+tokenized_labels can be of shape (batch_size, node_size) or the same shape
+depending on whether it is just a node or subtree.
+
+    context_reps = context_model(tokenized_contexts)    #(batch_size, embedding_dim) 
+    label_reps   = label_model(tokenized_labels)      #(batch_size, embedding_dim)
+    scores       = node_reps @ tree_reps.T           #(batch_size, batch_size)
+    labels       = [0 ... batch_size]                #(batch_size)
+    loss         = cross_entropy_loss(scores, labels)#(0)
+
+
+### Models configurations
+Currently three functioning configurations: bow, lstm, transformer
+
+#### BOW configuration ~ __baseline to compare with__:
+- context_model and label_model are the same.
+- simple embedding layer flattening the 2-d tree arrays and summing
+all vector embeddings. Ignoring padding.
+
+#### LSTM configuration ~ __more successful attempt__:
+- lstm over node representations with a submodel creating nodes
+- currently treats nodes as a bow as there is no sequencial logic
+to their tokenized representations.
+
+#### Transformer ~ __final endeavor__:
+- implements positional embeddings by flattening the 2-d 
+trees and using end of node and start of node tags.
+- Does not use above framework.
+
+
+## Improvement flow:
+
+#### Basic bow:
+- Baseline idea. 
+- no use of data yet.
+- poor accuracy.
+
+#### tree_reduction
+- randomnly drop subtrees until tree is of usable length.
+- drop all subtrees of too high depth.
+- slight improvement.
+
+#### lstm
+- learn sequential aspect of trees
+- larger improvement. 
+
+#### representations
+- embedding_dim
+- nodes or full subtrees
+- random node masking or full subtrees
+- improvement?
+
+#### 1d-cnn, deepwalk, transformer
+- significant improvements
+
+#### include data
+- after good way of including data hopefully good accurary.
+
+
+## TODO
+- Document code well
+- Get Data and clean new data
+- Include node data attribute
+- reduction techniques
+- evaluation task
+- Send first real experiment.
+
+# ignone rest of readme
 
 ## Analysis of tags, attributes and content
 #### Build files and word count

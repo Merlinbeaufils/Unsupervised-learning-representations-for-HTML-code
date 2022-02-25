@@ -1,33 +1,23 @@
 # =============================================================================
 # Libs
 # =============================================================================
-import multiprocessing
-from typing import List, Tuple
 
-import pytorch_lightning
-from pytorch_lightning import Trainer, LightningModule
-from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.utilities.types import TRAIN_DATALOADERS
-from torch.utils.data import Dataset, random_split
-import torch.nn.functional as F
-from collections import Counter
-from os.path import exists
-import torch.optim as optim
-import torch.nn as nn
-import numpy as np
-import random
-import torch
 import math
-import re
-from project.frequency import Vocabulary, build_files, build_vocabularies
-from project.dataloading import BaseTreeDataset
-from torch import LongTensor
+from os.path import exists
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from pytorch_lightning import LightningModule
+from torch.utils.data import Dataset, random_split
+
+from project.dataloading import TransformerTreeDataset
+from project.frequency import build_files, build_vocabularies
 # =============================================================================
 # Transformer
 # =============================================================================
-from project.parsing import dir_to_str, strings_to_trees, pickle_dump, pickle_load, HtmlNode
-from project.tree_tokenizer import TransformerTreeTokenizer
+from project.parsing import dir_to_str, strings_to_trees, pickle_dump, pickle_load
 
 
 def attention(q, k, v, mask=None, dropout=None):
@@ -114,12 +104,12 @@ class EncoderLayer(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, n_code, n_heads, embed_size, inner_ff_size, n_embeddings, seq_len, dropout=.1):
+    def __init__(self, n_code, n_heads, embed_size, inner_ff_size, n_embeddings, max_seq_len, dropout=.1):
         super().__init__()
 
         # model input
         self.embeddings = nn.Embedding(n_embeddings, embed_size)
-        self.pe = PositionalEmbedding(embed_size, seq_len)
+        self.pe = PositionalEmbedding(embed_size, max_seq_len)
 
         # backbone
         encoders = []
@@ -156,123 +146,25 @@ class PositionalEmbedding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        return self.pe[:, :x.size(1)]  # x.size(1) = seq_len
+        return self.pe[:, :x.size(1)]  # x.size(1) = max_seq_len
 
 
-# =============================================================================
-# Dataset
-# =============================================================================
-class SentencesDataset(Dataset):
-    # Init dataset
-    def __init__(self, sentences, vocab, seq_len):
-        dataset = self
 
-        dataset.sentences = sentences
-        dataset.vocab = vocab + ['<ignore>', '<oov>', '<mask>']
-        dataset.vocab = {e: i for i, e in enumerate(dataset.vocab)}
-        dataset.rvocab = {v: k for k, v in dataset.vocab.items()}
-        dataset.seq_len = seq_len
+class TransformerModule(LightningModule):
+    def __init__(self, dataset, kwargs=None, optim_kwargs=None, loader_kwargs=None):
+        self.kwargs = {'n_code': 8, 'n_heads': 8, 'embed_size': 60, 'inner_ff_size': 240,
+                       'n_embeddings': len(dataset.vocab) + 40,
+                       'max_seq_len': 512, 'dropout': 0.1} \
+                    if kwargs is None else kwargs
+        self.optim_kwargs = {'lr': 2e-3, 'weight_decay': 1e-4, 'betas': (.9, .999)} \
+                    if optim_kwargs is None else optim_kwargs
 
-        # special tags
-        dataset.IGNORE_IDX = dataset.vocab['<ignore>']  # replacement tag for tokens to ignore
-        dataset.OUT_OF_VOCAB_IDX = dataset.vocab['<oov>']  # replacement tag for unknown words
-        dataset.MASK_IDX = dataset.vocab['<mask>']  # replacement tag for the masked word prediction task
+        self.loader_kwargs = {'num_workers': 2, 'shuffle': True, 'drop_last': True,
+                              'pin_memory': True, 'batch_size': batch_size} \
+                    if loader_kwargs is None else loader_kwargs
 
-    # fetch data
-    def __getitem__(self, index, p_random_mask=0.15):
-        dataset = self
-
-        # while we don't have enough word to fill the sentence for a batch
-        s = []
-        while len(s) < dataset.seq_len:
-            s.extend(dataset.get_sentence_idx(index % len(dataset)))
-            index += 1
-
-        # ensure that the sequence is of length seq_len
-        s = s[:dataset.seq_len]
-        [s.append(dataset.IGNORE_IDX) for i in range(dataset.seq_len - len(s))]  # PAD ok
-
-        # apply random mask
-        s = [(dataset.MASK_IDX, w) if random.random() < p_random_mask else (w, dataset.IGNORE_IDX) for w in s]
-
-        return {'input': torch.Tensor([w[0] for w in s]).long(),
-                'target': torch.Tensor([w[1] for w in s]).long()}
-
-    # return length
-    def __len__(self):
-        return len(self.sentences)
-
-    # get words id
-    def get_sentence_idx(self, index):
-        dataset = self
-        s = dataset.sentences[index]
-        s = [dataset.vocab[w] if w in dataset.vocab else dataset.OUT_OF_VOCAB_IDX for w in s]
-        return s
-
-
-# BaseTreeDataset(trees, vocabs, indexes_length, total, key_only)
-class TransformerTreeDataset(BaseTreeDataset):
-    # Init dataset
-    def __init__(self, trees: List[HtmlNode], total_vocab: Vocabulary,
-                 indexes_length=1000, key_only=False, max_seq_len=512):
-        super().__init__(trees=trees, vocabs=[total_vocab],
-                         indexes_length=indexes_length, total=True,
-                         key_only=key_only, build_samples=False)
-
-        self.vocab = total_vocab
-        self.rvocab = total_vocab.reverse_vocab()
-        self.max_seq_len = max_seq_len
-        self.tree_tokenizer = TransformerTreeTokenizer(total_vocab=total_vocab)
-
-        # special tags
-        self.IGNORE_IDX = self.vocab['<ignore>']  # replacement tag for tokens to ignore
-        self.OUT_OF_VOCAB_IDX = self.vocab['<oov>']  # replacement tag for unknown words
-        self.MASK_IDX = self.vocab['<mask>']  # replacement tag for the masked word prediction task
-
-        self.reduce_trees(100)
-        self.indexes = self.build_indexes(indexes_length)
-        self.build_samples(indexes=self.indexes)
-        self.padding_tokens()
-
-    def build_sample(self, tree_index_path, tree_index) -> Tuple[List, List]:
-        # node: HtmlNode = self.trees[tree_index].path[tree_index_path]
-        tree: HtmlNode = self.trees[tree_index]
-        node: HtmlNode = tree.path[tree_index_path]
-        node.mask_affected()
-        tokenized_node, tokenized_tree = self.tree_tokenizer(tree)
-        node.unmask_affected()
-        assert len(tokenized_tree) == len(tokenized_node)
-        self.tree_max = max(len(tokenized_tree), self.tree_max)
-        return tokenized_node, tokenized_tree
-
-    def padding_tokens(self) -> None:
-        # for i, (node_sample, tree_sample) in enumerate(self.samples):
-        #     self.samples[i] = (node_sample[-1 * self.max_seq_len:], tree_sample[-1 * self.max_seq_len:])
-        #     [self.samples[i][0].append(self.IGNORE_IDX) for i in range(self.max_seq_len - len(node_sample))]
-        #     [self.samples[i][1].append(self.IGNORE_IDX) for i in range(self.max_seq_len - len(tree_sample))]
-        # assert len(self.samples[0][0]) == len(self.samples[0][1])
-        for i, (node_sample, tree_sample) in enumerate(self.samples):
-            node_sample, tree_sample = node_sample[-1 * self.max_seq_len:], tree_sample[-1 * self.max_seq_len:]
-            [node_sample.append(self.IGNORE_IDX) for i in range(self.max_seq_len - len(node_sample))]
-            [tree_sample.append(self.IGNORE_IDX) for i in range(self.max_seq_len - len(tree_sample))]
-            self.samples[i] = node_sample, tree_sample
-        assert len(self.samples[0][0]) == len(self.samples[0][1])
-
-    # fetch data
-    def __getitem__(self, index):
-        node_sample, tree_sample = self.samples[index]
-        return LongTensor(node_sample), LongTensor(tree_sample)
-
-    # return length
-    def __len__(self):
-        return len(self.samples)
-
-
-class MyModel(LightningModule):
-    def __init__(self):
         super().__init__()
-        self.model = Transformer(n_code, n_heads, embed_size, inner_ff_size, len(dataset.vocab) + MAX_DEPTH, seq_len, dropout)
-        self.configure_optimizers()
+        self.model = Transformer(**kwargs)
         self.loss_model = nn.CrossEntropyLoss(ignore_index=dataset.IGNORE_IDX)
 
         train_size = int(0.8 * len(dataset))
@@ -280,20 +172,13 @@ class MyModel(LightningModule):
         self.train_data, self.test_data = random_split(dataset, [train_size, test_size])
 
     def configure_optimizers(self):
-        optim_kwargs = {'lr': 2e-3, 'weight_decay': 1e-4, 'betas': (.9, .999)}
-        return optim.Adam(self.model.parameters(), **optim_kwargs)
+        return optim.Adam(self.model.parameters(), **self.optim_kwargs)
 
-    def train_dataloader(self) -> TRAIN_DATALOADERS:
-        kwargs = {'num_workers': multiprocessing.cpu_count(), 'shuffle': True, 'drop_last': True,
-                  'pin_memory': True,
-                  'batch_size': batch_size}
-        return torch.utils.data.DataLoader(self.train_data, **kwargs)
+    def train_dataloader(self):
+        return torch.utils.data.DataLoader(self.train_data, **self.loader_kwargs)
 
     def test_dataloader(self):
-        kwargs = {'num_workers': multiprocessing.cpu_count(), 'shuffle': True, 'drop_last': True,
-                  'pin_memory': True,
-                  'batch_size': batch_size}
-        return torch.utils.data.DataLoader(self.test_data, **kwargs)
+        return torch.utils.data.DataLoader(self.test_data, **self.loader_kwargs)
 
     def training_step(self, batch, batch_idx):
         features, labels = batch
@@ -313,16 +198,6 @@ if __name__ == '__main__':
     # #Init
     # =============================================================================
     print('initializing..')
-    batch_size = 32
-    seq_len = 512
-    embed_size = 128
-    inner_ff_size = embed_size * 4
-    n_heads = 8
-    n_code = 8
-    dropout = 0.1
-    MAX_DEPTH = 40
-    only_keys = False
-    using_gpu = False
 
     # =============================================================================
     # Input
@@ -373,21 +248,6 @@ if __name__ == '__main__':
     # =============================================================================
     print('training...')
 
-
-
-    transformer_model = MyModel()
-    if using_gpu:
-        gpus = 1
-        transformer_model = transformer_model.cuda()
-    else:
-        gpus = 0
-    logger = TensorBoardLogger('tb_logs', name='transformer')
-    trainer = Trainer(
-        gpus=0,
-        logger=[logger],
-        max_epochs=5
-    )
-    trainer.fit(transformer_model)
     # =============================================================================
     # Results analysis
     # =============================================================================
