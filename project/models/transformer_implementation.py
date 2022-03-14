@@ -149,10 +149,10 @@ class PositionalEmbedding(nn.Module):
         return self.pe[:, :x.size(1)]  # x.size(1) = max_seq_len
 
 
-
 class TransformerModule(LightningModule):
     def __init__(self, dataset, kwargs=None, optim_kwargs=None, loader_kwargs=None):
-        self.kwargs = {'n_code': 8, 'n_heads': 8, 'embed_size': 60, 'inner_ff_size': 240,
+        # embed_size must be divisible by n_heads
+        self.kwargs = {'n_code': 8, 'n_heads': 8, 'embed_size': 64, 'inner_ff_size': 240,
                        'n_embeddings': len(dataset.vocab) + 40,
                        'max_seq_len': 512, 'dropout': 0.1} \
                     if kwargs is None else kwargs
@@ -160,7 +160,7 @@ class TransformerModule(LightningModule):
                     if optim_kwargs is None else optim_kwargs
 
         self.loader_kwargs = {'num_workers': 2, 'shuffle': True, 'drop_last': True,
-                              'pin_memory': True, 'batch_size': batch_size} \
+                              'pin_memory': True, 'batch_size': 64} \
                     if loader_kwargs is None else loader_kwargs
 
         super().__init__()
@@ -187,10 +187,26 @@ class TransformerModule(LightningModule):
         output_v = output.view(-1, output.shape[-1])
         target_v = labels.view(-1, 1).squeeze()
         loss = self.loss_model(output_v, target_v)
+        print(loss)
+        self.log("train/loss", loss)
         return loss
 
     def forward(self, features, batch_idx):
         return self.model(features)
+
+    # def validation_step(self, batch, batch_idx):
+    #     features, labels = batch
+    #     output = self.forward(features, batch_idx)
+    #
+    #     output_v = output.view(-1, output.shape[-1])
+    #     target_v = labels.view(-1, 1).squeeze()
+    #     loss = self.loss_model(output_v, target_v)
+    #     print(loss)
+    #     self.log("val/loss", loss)
+    #     self.log("val/accuracy", accuracy)
+    #
+    #     print('Validation: ', accuracy)
+    #     return loss
 
 
 if __name__ == '__main__':
@@ -228,7 +244,7 @@ if __name__ == '__main__':
     # 4) create dataset
     print('creating dataset...')
     dataset = TransformerTreeDataset(trees=trees, total_vocab=vocab, indexes_length=200,
-                                     key_only=only_keys, max_seq_len=seq_len)
+                                     key_only=True, max_seq_len=512)
 
     # =============================================================================
     # Model

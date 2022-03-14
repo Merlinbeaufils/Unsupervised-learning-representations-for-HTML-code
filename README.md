@@ -1,6 +1,6 @@
 # Thesis
 ### Learning vector representations of websites
-
+Dependencies: pandas, pytorch_lightning, scikit_learn
 ## Structure of repository:
 - __data folder__ - contains different data repos
 - __project__ - folder contains coding modules

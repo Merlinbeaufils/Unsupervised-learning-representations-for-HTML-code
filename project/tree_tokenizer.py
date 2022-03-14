@@ -119,7 +119,6 @@ class TransformerTreeTokenizer(BaseTokenizer):
         return feature, label
 
 
-
 class KeyOnlyTokenizer(BaseTokenizer):
     def handle_attr(self, key: str, value: int) -> List[int]:
         return [self.keys[key]]

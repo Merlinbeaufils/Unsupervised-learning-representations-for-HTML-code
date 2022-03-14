@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import torch
 import torch.nn as nn
 from pytorch_lightning.core.lightning import LightningModule
@@ -7,6 +9,7 @@ from torch.optim import SGD
 from torch.utils.data import DataLoader, random_split
 
 from project.models.bow_models import FlatSumBow
+from project.models.pipe_transformer import SubModelTransformer
 from project.models.recurrent_models import SimpleRnn, SubModelLstm
 
 MAX_DEPTH = 40
@@ -15,7 +18,7 @@ MAX_DEPTH = 40
 class BaseModel(LightningModule):
     """
     Applies contrastive learning framework on the "node" and "tree" models.
-    These are just as easily context and label models.
+    These are just like context and masked label models.
 
     Standard functions are:
         similarity: cosine
@@ -28,6 +31,7 @@ class BaseModel(LightningModule):
                  similarity_type='cosine', embedding_dim=60,
                  train_proportion=0.8, num_cpus=2):
         super().__init__()
+        self.dataset = dataset
         self.tree_model_type = tree_model_type
         self.node_model_type = node_model_type
         self.optimizer_type = optimizer_type
@@ -47,7 +51,7 @@ class BaseModel(LightningModule):
         self.train_loader, self.eval_loader, self.test_loader = \
             self.set_loaders(dataset, self.train_proportion, num_cpus)
 
-    def forward(self, train_batch):
+    def forward(self, train_batch) -> Tuple[Tensor, Tensor]:
         trees1, trees2 = train_batch
         reps1 = self.node_model(trees1)
         reps2 = self.tree_model(trees2)
@@ -55,19 +59,33 @@ class BaseModel(LightningModule):
 
     def training_step(self, train_batch, batch_idx):
         reps1, reps2 = self.forward(train_batch)  # batch_dim x embedding_dim
+        # reps1.norm(dim=1)
         # reps1 = reps1 / torch.linalg.norm(reps1, dim=1, keepdims=True)
         # reps2 = reps2 / torch.linalg.norm(reps2, dim=1, keepdims=True)
 
         scores = reps1 @ reps2.T  # batch_dim x batch_dim
         labels = torch.arange(reps1.size(0), device=reps1.device)  # batch_dim x batch_dim
         loss = self.loss_function(scores, labels)
+
         print(loss.item())
+        self.log("train/loss", loss)
         return loss
 
-    # def validation_step(self, batch, batch_idx):
-    #     reps1, reps2 = self.forward(batch)
-    #     scores = torch.diag(reps1 @ reps2.T)
-    #     return scores.mean()
+    def validation_step(self, batch, batch_idx):
+        reps1, reps2 = self.forward(batch)
+        scores = reps1 @ reps2.T
+
+        labels = torch.arange(reps1.size(0), device=reps1.device)  # batch_dim x batch_dim
+        loss = self.loss_function(scores, labels)
+
+        accuracy_vector = (torch.argmax(scores, dim=1) == labels).float()
+        accuracy = accuracy_vector.mean()
+
+        self.log("val/loss", loss)
+        self.log("val/accuracy", accuracy)
+
+        print('Validation: ', accuracy)
+        return loss  # CHANGE
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return self.train_loader
@@ -75,8 +93,8 @@ class BaseModel(LightningModule):
     def test_dataloader(self) -> EVAL_DATALOADERS:
         return self.test_loader
 
-    # def val_dataloader(self) -> EVAL_DATALOADERS:
-    #     return self.eval_loader
+    def val_dataloader(self) -> EVAL_DATALOADERS:
+        return self.eval_loader
 
     def configure_optimizers(self):
         if self.optimizer_type.lower() == 'sgd':
@@ -103,7 +121,7 @@ class BaseModel(LightningModule):
                                  num_workers=num_cpus)
         test_loader = DataLoader(test_data, batch_size=self.batch_size,
                                  num_workers=num_cpus)
-        return train_loader, eval_loader, test_loader
+        return [train_loader] * 3 #, eval_loader, test_loader
 
     def configure_similarity(self):
         if self.similarity_type == 'cosine':
@@ -118,6 +136,10 @@ class BaseModel(LightningModule):
             node_model = FlatSumBow(self.embedding)
         elif name == 'rnn':
             node_model = SimpleRnn(self.embedding, self.inner_dim)
+        elif name == 'lstm':
+            node_model = SubModelLstm(FlatSumBow(self.embedding), hidden_size=self.embedding_dim)
+        elif name == 'transformer':
+            node_model = SubModelTransformer(FlatSumBow(self.embedding), vocab_length=len(self.dataset.vocab))
         else:
             raise NoNodeModel
         return node_model
@@ -130,6 +152,8 @@ class BaseModel(LightningModule):
             tree_model = FlatSumBow(self.embedding)
         elif name == 'lstm':
             tree_model = SubModelLstm(self.node_model, hidden_size=self.embedding_dim)
+        elif name == 'transformer':
+            tree_model = SubModelTransformer(self.node_model, vocab_length=len(self.dataset.vocab))
         else:
             raise NoTreeModel
         return tree_model

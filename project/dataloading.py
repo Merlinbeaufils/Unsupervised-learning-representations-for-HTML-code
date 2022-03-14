@@ -18,6 +18,10 @@ Forest = List[HtmlNode]
 PAD_VALUE = 0
 
 
+class UnknownSampleConfig(Exception):
+    pass
+
+
 class BaseTreeDataset(Dataset):  # Tree dataset class allowing handling of html trees
     """
     Dataset to deal with building samples from HtmlNode class
@@ -29,20 +33,21 @@ class BaseTreeDataset(Dataset):  # Tree dataset class allowing handling of html 
     """
     def __init__(self, trees: List[HtmlNode], vocabs: List[Vocabulary],
                  indexes_length=1000, total: bool = False, key_only: bool = False,
-                 build_samples: bool = True):
+                 build_samples: bool = True, index_config='per_tree', per_tree=10, sample_config='base'):
         # indexes is a list of (tree_path_index, tree_index) tuples indicating (node, tree)
         super().__init__()
         self.trees:   Forest = trees
         self.samples = []
-        self.tree_max: int = 0
-        self.node_max: int = 0
         self.total = total
+        self.vocab = vocabs[0]
         self.key_only = key_only
         self.node_tokenizer, self.tree_tokenizer = self.set_tokenizers(vocabs=vocabs)
+        self.index_builder: BaseIndexBuilder = self.config_index_builder(indexes_length, index_config, per_tree)
+        self.sample_builder: BaseSampleBuilder = self.config_sample_builder(sample_config)
         if build_samples:
-            self.indexes = self.build_indexes(indexes_length)
-            self.build_samples(self.indexes)
-            self.padding_tokens()
+            self.indexes = self.index_builder.build_indexes()
+            self.samples = self.sample_builder.build_samples(self.indexes)
+            self.padding_tokens(sample_config)
 
     def __getitem__(self, index: int) -> TensorizedSample:  # returns a (subtree, tree) pair. Tokenized
         token_node, token_tree = self.samples[index]
@@ -51,47 +56,33 @@ class BaseTreeDataset(Dataset):  # Tree dataset class allowing handling of html 
     def __len__(self) -> int:  # returns # of samples
         return len(self.indexes)
 
-    def build_indexes(self, indexes_length) -> List[Tuple[int, int]]:
-        indexes = []
-        for tree_index in range(len(self.trees)):
-            for tree_path_index in range(len(self.trees[tree_index].path)):
-                self.handle_index(indexes, tree_path_index, tree_index)
-                if len(indexes) == indexes_length:
-                    random.shuffle(indexes)
-                    print('done with indexes. Length: ', len(indexes))
-                    random.shuffle(indexes)
-                    return indexes
-        random.shuffle(indexes)
-        print('done with indexes. Length: ', len(indexes))
-        return indexes
+    def config_index_builder(self, max_indexes, index_config, per_tree):
+        if index_config == 'all':
+            return BaseIndexBuilder(self.trees, max_indexes)
+        elif index_config == 'per_tree':
+            return PerTreeIndexBuilder(self.trees, max_indexes, per_tree)
 
     def handle_index(self, indexes, tree_path_index, tree_index):
         indexes.append((tree_path_index, tree_index))
 
-    def build_samples(self, indexes):
-        self.samples.clear()
-        i = 0
-        for tree_index_path, tree_index in indexes:
-            i += 1
-            tokenized_node, tokenized_tree = self.build_sample(tree_index_path, tree_index)
-            self.samples.append((tokenized_node, tokenized_tree))
+    def config_sample_builder(self, sample_config):
+        if sample_config == 'base':
+            return BaseSampleBuilder(self.trees, self.node_tokenizer, self.tree_tokenizer)
+        elif sample_config == 'transformer':
+            return TransformerSampleBuilder(self.trees, self.node_tokenizer, self.tree_tokenizer)
 
-    def build_sample(self, tree_index_path, tree_index) -> Tuple[List, List]:
-        node: HtmlNode = self.trees[tree_index].path[tree_index_path]
-        tree: HtmlNode = self.trees[tree_index]
-        tokenized_node = self.node_tokenizer(node=node)
-        node.mask_self()
-        tokenized_tree = self.tree_tokenizer(tree=tree)
-        node.unmask_self()
-        tree_node_max = len(max(tokenized_tree, default=0, key=len))
-        self.node_max = max(tree_node_max, self.node_max)
-        self.tree_max = max(len(tokenized_tree), self.tree_max)
-        return tokenized_node, tokenized_tree
-
-    def padding_tokens(self) -> None:
+    def padding_tokens(self, sample_config) -> None:
+        print('padding tokens...')
         for node_sample, tree_sample in self.samples:
-            pad_node(node_sample, self.node_max)
-            pad_tree(tree_sample, self.tree_max, self.node_max)
+            if sample_config == 'transformer':
+                # print('~~~~~~~~~~~~~~ Working correctly ~~~~~~~~~~~~')
+                pad_tree(node_sample, self.sample_builder.tree_max, self.sample_builder.node_max)
+            elif sample_config == 'base':
+                pad_node(node_sample, self.sample_builder.node_max)
+            else:
+                raise UnknownSampleConfig
+
+            pad_tree(tree_sample, self.sample_builder.tree_max, self.sample_builder.node_max)
 
     def reduce_trees(self, max_size=500):
         for tree in self.trees:
@@ -104,6 +95,10 @@ class BaseTreeDataset(Dataset):  # Tree dataset class allowing handling of html 
             node_tokenizer = BaseTokenizer(vocabs=vocabs, total=self.total)
         tree_tokenizer = TreeTokenizer(vocabs=vocabs, total=self.total)
         return node_tokenizer, tree_tokenizer
+
+
+
+
 
 
 class ContTreeDataset(BaseTreeDataset):  # Samples are of type: (masked_tree, tree)
@@ -130,11 +125,13 @@ class ContTreeDataset(BaseTreeDataset):  # Samples are of type: (masked_tree, tr
 class TransformerTreeDataset(BaseTreeDataset):
     # Init dataset
     def __init__(self, trees: List[HtmlNode], total_vocab: Vocabulary,
-                 indexes_length=1000, key_only=False, max_seq_len=512):
+                 indexes_length=1000, key_only=False, max_seq_len=512,
+                 index_config='per_tree', per_tree=10):
 
         super().__init__(trees=trees, vocabs=[total_vocab],
                          indexes_length=indexes_length, total=True,
-                         key_only=key_only, build_samples=False)
+                         key_only=key_only, build_samples=False, index_config=index_config,
+                         per_tree=per_tree)
 
         self.vocab = total_vocab
         self.rvocab = total_vocab.reverse_vocab()
@@ -147,7 +144,7 @@ class TransformerTreeDataset(BaseTreeDataset):
         self.MASK_IDX = self.vocab['<mask>']  # replacement tag for the masked word prediction task
 
         self.reduce_trees(100)
-        self.indexes = self.build_indexes(indexes_length)
+        self.indexes = self.index_builder.build_indexes()
         self.build_samples(indexes=self.indexes)
         self.padding_tokens()
 
@@ -162,7 +159,7 @@ class TransformerTreeDataset(BaseTreeDataset):
         self.tree_max = max(len(tokenized_tree), self.tree_max)
         return tokenized_node, tokenized_tree
 
-    def padding_tokens(self) -> None:
+    def padding_tokens(self, ignore) -> None:
         # for i, (node_sample, tree_sample) in enumerate(self.samples):
         #     self.samples[i] = (node_sample[-1 * self.max_seq_len:], tree_sample[-1 * self.max_seq_len:])
         #     [self.samples[i][0].append(self.IGNORE_IDX) for i in range(self.max_seq_len - len(node_sample))]
@@ -203,6 +200,7 @@ def pad_node(node: List, length_node: int) -> None:
         print('This is the actual node length:', len(node))
         raise PadError
 
+
 '''
 def basic_data_loader_build(args: Namespace, size: int = 500) -> (DataLoader, DataLoader):
     indexes = total_build_indexes(size)
@@ -214,8 +212,9 @@ def basic_data_loader_build(args: Namespace, size: int = 500) -> (DataLoader, Da
     test_dataloader = DataLoader(test_data, batch_size=64, shuffle=True)
     return train_dataloader, test_dataloader
 '''
-
 # dataset = BaseTreeDataset(indexes, './tree_directory')
+
+
 def collate_function(batch: Samples):
     node_max, tree_max = 0, 0
     new_batch = []
@@ -238,3 +237,88 @@ def collate_function(batch: Samples):
 
 class PadError(Exception):
     pass
+
+
+class BaseIndexBuilder:
+    def __init__(self, trees, max_indexes):
+        self.trees = trees
+        self.max_indexes = max_indexes
+
+    def build_indexes(self):
+        print("building_indexes...")
+        indexes = []
+        for tree_index in range(len(self.trees)):
+            for tree_path_index in range(len(self.trees[tree_index].path)):
+                indexes.append((tree_path_index, tree_index))
+        random.shuffle(indexes)
+        print('done with indexes. Length: ', min(len(indexes), self.max_indexes))
+        return indexes[:self.max_indexes]
+
+
+class PerTreeIndexBuilder(BaseIndexBuilder):
+    def __init__(self, trees, max_indexes, indexes_per_tree):
+        super().__init__(trees, max_indexes)
+        self.indexes_per_tree = indexes_per_tree
+
+    def build_indexes(self):
+        print("building_indexes...")
+        indexes = []
+        for tree_index in range(len(self.trees)):
+            path_indexes = range(len(self.trees[tree_index].path))
+            sample = path_indexes if self.indexes_per_tree > len(path_indexes) else \
+                random.sample(path_indexes, self.indexes_per_tree)
+            for tree_path_index in sample:
+                indexes.append((tree_path_index, tree_index))
+        print('done with indexes. Length: ', min(len(indexes), self.max_indexes))
+        random.shuffle(indexes)
+        return indexes[:self.max_indexes]
+
+
+class BaseSampleBuilder:
+    def __init__(self, trees, node_tokenizer, tree_tokenizer):
+        self.trees = trees
+        self.node_tokenizer = node_tokenizer
+        self.tree_tokenizer = tree_tokenizer
+        self.node_max = 0
+        self.tree_max = 0
+
+    def build_samples(self, indexes):
+        print("building samples...")
+        samples = []
+        i = 0
+        for tree_index_path, tree_index in indexes:
+            i += 1
+            tokenized_node, tokenized_tree = self.build_sample(tree_index_path, tree_index)
+            samples.append((tokenized_node, tokenized_tree))
+        return samples
+
+    def build_sample(self, tree_path_index, tree_index):
+        tree: HtmlNode = self.trees[tree_index]
+        node: HtmlNode = tree.path[tree_path_index]
+        tokenized_node = self.node_tokenizer(node=node)
+        node.mask_self()
+        tokenized_tree = self.tree_tokenizer(tree=tree)
+        node.unmask_self()
+        tree_node_max = len(max(tokenized_tree, default=0, key=len))
+        self.node_max = max(tree_node_max, self.node_max)
+        self.tree_max = max(len(tokenized_tree), self.tree_max)
+        return tokenized_node, tokenized_tree
+
+
+class TransformerSampleBuilder(BaseSampleBuilder):
+    def __init__(self, trees, node_tokenizer, tree_tokenizer):
+        super().__init__(trees, node_tokenizer, tree_tokenizer)
+
+    def build_sample(self, tree_path_index, tree_index):
+        # print('~~~~~~~~~~~~~~ This is New ~~~~~~~~~~~')
+        tree: HtmlNode = self.trees[tree_index]
+        node: HtmlNode = tree.path[tree_path_index]
+        tokenized_node = self.tree_tokenizer(tree=node)
+        node.mask_affected()
+        tokenized_tree = self.tree_tokenizer(tree=tree)
+        node.unmask_affected()
+        tree_node_max = len(max(tokenized_tree, default=0, key=len))
+        node_node_max = len(max(tokenized_node, default=0, key=len))
+        self.node_max = max(tree_node_max, node_node_max, self.node_max)
+        self.tree_max = max(len(tokenized_tree), self.tree_max)
+        return tokenized_node, tokenized_tree

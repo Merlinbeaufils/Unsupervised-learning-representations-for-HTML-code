@@ -4,8 +4,11 @@ from typing import Dict
 from typing import Tuple, List
 
 from torch import LongTensor
-
-from project.parsing import dir_to_str, strings_to_trees, pickle_dump, HtmlNode
+from project.parsing import dir_to_str, strings_to_trees, pickle_dump, HtmlNode, pandas_to_strings, \
+    strings_to_trees_and_files
+from sklearn.feature_extraction.text import TfidfVectorizer
+import codecs
+FILE_SPLIT_TOKEN = '<<<START_OF_HTML_FILE>>>'
 
 OTHER: int = 0  # other value is currently 0
 
@@ -23,7 +26,7 @@ class Vocabulary(dict):  # Abstract dict class creating a tokenizing map from a 
         self.__setitem__('<oov>', 0)
         self.__setitem__('<ignore>', 1)
         self.__setitem__('<mask>', 2)
-        #self.__setitem__('<SON>', 3)
+        # self.__setitem__('<SON>', 3)
         # self.__setitem__('<EON>', 4)
         self.floor = floor
         self.frequency = freq
@@ -80,13 +83,14 @@ class FreqParser(HTMLParser):
             self.df.write(data + " ")
 
 
-def build_files(start_directory, end_directory, key_only=False) -> None:
+def build_files(start_directory, end_directory, key_only=False, pandas=False) -> None:
     """
     Builds files for building vocabs and frequency analysis
 
     :param start_directory: takes html files from this directory
     :param end_directory: places text files at this directory
     :param key_only: disregards "values" totally (reduces complexity of data)
+    :param pandas: if True: pandas file, else directory of strings.
     :return: None
     """
     os.makedirs(end_directory, mode=0o777, exist_ok=True)
@@ -96,23 +100,32 @@ def build_files(start_directory, end_directory, key_only=False) -> None:
          open(end_directory + "/data.txt", 'w', errors='ignore') as data_f, \
          open(end_directory + "/total.txt", 'w', errors='ignore') as total_f:
 
-        strings = dir_to_str(start_directory)
+        strings = dir_to_str(start_directory) if not pandas else pandas_to_strings(start_directory)
         frequency_parser = FreqParser(tag_f, data_f, key_f, value_f, total_f, key_only)
         [frequency_parser.feed(string) for string in strings]
 
 
-def build_trees(directory, Pickle_trees: bool=False) -> List[HtmlNode]:
+def build_trees(directory, pickle_trees: bool = False, pandas: bool = False) -> List[HtmlNode]:
     """
     Builds trees from the given directory
     :param directory: html file directory
-    :param Pickle_trees: Pickle trees into memory at directory/trees/trees
+    :param pickle_trees: Pickle trees into memory at directory/trees/trees
+    :param pandas: if True: pandas file of html strings, else: directory of html strings
     :return: List of trees as HtmlNodes
     """
-    strings = dir_to_str(directory)
+    strings = dir_to_str(directory) if not pandas else pandas_to_strings(directory)
     trees = strings_to_trees(strings)
     os.makedirs(directory + 'trees', mode=0o777, exist_ok=True)
-    if Pickle_trees:
+    if pickle_trees:
         pickle_dump(directory + 'trees/trees', trees)
+    return trees
+
+
+def build_trees_and_files(directory, pandas: bool = False, max_trees=1000):
+    strings = dir_to_str(directory) if not pandas else pandas_to_strings(directory, max_trees * 3)
+    directory = directory if not pandas else directory + '/'
+    trees = strings_to_trees_and_files(strings, directory, max_trees)
+    pickle_dump(directory + 'trees/trees', trees)
     return trees
 
 
@@ -162,17 +175,24 @@ def build_vocabularies(directory, tag_floor=2, key_floor=2, value_floor=2, total
     return tag_vocab, key_vocab, value_vocab, total_vocab
 
 
+def term_frequency(data_file):
+    file = codecs.open(data_file, "r", "utf-8", errors='ignore')
+    strings = file.read().strip(FILE_SPLIT_TOKEN).split(FILE_SPLIT_TOKEN)
+    vectorizer = TfidfVectorizer()
+    matrix = vectorizer.fit_transform(strings)
+    return matrix, vectorizer
+
+
 def pickle_trees(directory):
     strings = dir_to_str(directory)
     trees = strings_to_trees(strings)
     pickle_dump(directory + '/trees/trees', trees)
 
 
-# pickle_trees('./common_sites')
-# rebuild()
-# quick_analysis()
+def test():
+    trees = build_trees_and_files(directory='data/feather', pandas=True, max_trees=10)
+    matrix, vectorizer = term_frequency('data/feather/text_files/data.txt')
+    print('hi')
 
-# build_files('./common_sites','./analysis')
-# word_count('./analysis/tag_file.txt', './analysis/tags')
-# word_count('./analysis/key_file.txt', './analysis/keys')
-# word_count('./analysis/value_file.txt', './analysis/values')
+
+#test()

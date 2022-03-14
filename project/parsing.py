@@ -1,8 +1,17 @@
 import codecs
+import math
 import os
 import pickle
 from html.parser import HTMLParser
 from typing import List, Tuple
+
+import numpy as np
+import pandas
+
+dont_handle_data = ['script', 'style']
+do_handle_data = ['p', 'span', 'br', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'blockquote', 'q',
+                  'li', 'dt', 'dd', 'mark', 'ins', 'del', 'sup', 'sub', 'small', 'i', 'b']
+current_amount_of_pickled_trees = 28924
 
 void_tags = ["area", "base", "br", "col", "command", "embed", "hr", "img", "input", "keygen", "link", "meta", "param",
              "source", "track", "wbr"]
@@ -12,19 +21,25 @@ class MyHTMLParser(HTMLParser):
     """
     Parser to build trees from html file
     """
-    def __init__(self):
+    def __init__(self, files=None, key_only: bool = False):
         super().__init__()
         # addressing omittable start tags
         self.tree: HtmlNode = HtmlNode("html", attrs=[], father=None, depth=0)
-        self.head: HtmlNode = HtmlNode("head", attrs=[], father=self.tree, depth=1, child_index=0)
-        self.body: HtmlNode = HtmlNode("body", attrs=[], father=self.tree, depth=1, child_index=1)
+        self.head: HtmlNode = HtmlNode("head", attrs=[], father=self.tree, depth=1, child_index=0, root_node=self.tree)
+        self.body: HtmlNode = HtmlNode("body", attrs=[], father=self.tree, depth=1, child_index=1, root_node=self.tree)
         self.tree.children = [self.body, self.head]
         self.node_stack = [self.tree, self.head]
+        self.build_files = 0
+        if files is not None:
+            self.build_files = 1
+            self.tag_file, self.key_file, self.value_file, self.data_file, self.total_file = files
+        self.key_only = key_only
 
     def handle_starttag(self, tag, attrs):
         if tag.lower() not in ["html", "head", "body"]:
             father = self.node_stack[-1]
-            node = HtmlNode(tag=tag.lower(), attrs=attrs, father=father, children=[], child_index=len(father.children))
+            node = HtmlNode(tag=tag.lower(), attrs=attrs, father=father,
+                            children=[], child_index=len(father.children), root_node=self.tree)
             node.depth = len(self.node_stack)
             father.children.append(node)
             self.node_stack.append(node)
@@ -41,55 +56,43 @@ class MyHTMLParser(HTMLParser):
         if tag in void_tags:
             self.node_stack.pop()
 
-    def handle_endtag(self, tag):
-        if tag == self.node_stack[-1].tag:
-            self.node_stack.pop()
-        else:
-            print("fuck")
-        return
-        # print("End tag  :", tag)
+        if self.build_files:
+            self.tag_file.write(tag + " ")
+            self.total_file.write(tag + " ")
+            for attr in attrs:
+                key, value = attr
+                self.key_file.write(str(key) + " ")
+                self.value_file.write(str(value) + " ")
+                self.total_file.write(str(key) + " ")
+                if not self.key_only:
+                    self.total_file.write(str(value) + " ")
 
-    def handle_startendtag(self, tag: str, attrs: list) -> None:
-        self.handle_starttag(tag, attrs)
+    def handle_endtag(self, tag):
         if tag not in void_tags:
-            self.handle_endtag(tag)
-        return
+            if tag == self.node_stack[-1].tag:
+                self.node_stack.pop()
+            else:
+                raise Exception
+
+        if self.build_files and tag == 'html':
+            self.data_file.write('<<<START_OF_HTML_FILE>>>')
 
     def handle_data(self, data):
         data = data.strip()
-        if data and self.node_stack:
-            # print("Data: ", data, "Node_stack: ",[node.show() for node in self.node_stack])
-            self.node_stack[-1].data = data
-        # node = self.node_stack[-1]
-        # node.data = data
-        # print(self.tree.tag == None)
-        # print("Data     :", data)
+        curr_node = None if not self.node_stack else self.node_stack[-1]
+        tag = False if not self.node_stack else curr_node.tag
+        handle_data = False if not self.node_stack else tag in do_handle_data
 
-    def handle_comment(self, data):
-        pass
-        # print("Comment  :", data)
-
-    def handle_entityref(self, name):
-        pass
-        # c = chr(name2codepoint[name])
-        # print("Named ent:", c)
-
-    def handle_charref(self, name):
-        pass
-        # if name.startswith('x'):
-        #    c = chr(int(name[1:], 16))
-        # else:
-        #    c = chr(int(name))
-        # print("Num ent  :", c)
-
-    def handle_decl(self, data):
-        # print("Decl     :", data)
-        pass
+        if data and handle_data:
+            curr_node.data += data
+            if self.build_files:
+                self.data_file.write(tag + ':' + data + " ")
 
 
 class HtmlNode:
     def __init__(self, tag="", attrs: List[Tuple[str, str]] = None,
-                 father=None, children: List = None, depth=0, mask_val=0, child_index=0):
+                 father=None, children: List = None, depth=0, mask_val=0,
+                 child_index=0, root_node=None):
         """
         Tree structure to represent files
         :param tag: element tag
@@ -100,12 +103,12 @@ class HtmlNode:
         :param mask_val: Denotes whether this node was masked
         :param child_index: Index of child in parent node
         """
-        if children is None:
-            children = []
-        if attrs is None:
-            attrs = []
+
+        self.children: List[HtmlNode] = [] if children is None else children
+        self.attrs = [] if attrs is None else attrs
+        self.root_node = self if root_node is None else root_node
+
         self.father: HtmlNode = father
-        self.children: List[HtmlNode] = children
         self.tag: str = tag
         self.attrs = attrs
         self.data: str = ""
@@ -140,12 +143,15 @@ class HtmlNode:
     def __str__(self):
         # root_depth = self.depth if root_depth == -1 else root_depth
         indent = " " * 4 * self.depth
-        children_str = "\n".join(map(str, self.children))
+        children_str = "\n".join(map(str, self.children.__reversed__()))
         if children_str:
             children_str = "\n" + children_str
         if self.sim_string:
             attributes = " ".join(['%s="%s"' % (key, value) for key, value in self.attrs])
             return indent + "<%s %s> %s %s </%s>" % (self.tag, attributes, self.data.strip(), children_str, self.tag)
+
+    def __len__(self):
+        return len(self.path)
 
     def __bool__(self):
         return bool(self.children)
@@ -224,6 +230,8 @@ class HtmlNode:
             child.mask_affected()
 
 
+
+
 def string_to_tree(string: str) -> HtmlNode:
     """
     Build tree from a string
@@ -237,8 +245,82 @@ def string_to_tree(string: str) -> HtmlNode:
     return parser.tree
 
 
-def strings_to_trees(strings: List[str]) -> List[HtmlNode]:
-    return [string_to_tree(string) for string in strings]
+def strings_to_trees_and_files(strings: List[str], directory: str, max_trees=1000):
+    # panda_dir = directory + '/masked_websites.feather'
+    directory = directory + '/text_files'
+    with open(directory + "/tags.txt", 'w', errors='ignore') as tag_f, \
+            open(directory + "/keys.txt", 'w', errors='ignore') as key_f, \
+            open(directory + "/values.txt", 'w', errors='ignore') as value_f, \
+            open(directory + "/data.txt", 'w', errors='ignore') as data_f, \
+            open(directory + "/total.txt", 'w', errors='ignore') as total_f:
+        trees = []
+        i = 0
+        mask = []
+        while len(trees) < max_trees and i < len(strings):
+            string = strings[i]
+            parser = MyHTMLParser([tag_f, key_f, value_f, data_f, total_f])
+            try:
+                parser.feed(string)
+                tree = parser.tree
+                tree.build_path()
+                trees.append(tree)
+                mask.append(True)
+            except Exception:
+                mask.append(False)
+            i += 1
+    return trees
+
+def strings_to_trees(strings: List[str], describe=True, index=0) -> List[HtmlNode]:
+    if describe:
+        trees = []
+        non_working_files = []
+        i = index
+        while len(trees) < 1000 and i < len(strings):
+            try:
+                trees.append(string_to_tree(strings[i]))
+            except Exception:
+                print('File #: ', i)
+                non_working_files.append(i)
+            i += 1
+        pickle_dump('data/feather/tree_batches/' + str(index), trees)
+        strings_to_trees(strings, True, i)
+    else:
+        return [string_to_tree(string) for string in strings]
+
+
+def pickle_panda_strings(directory: str):
+    panda_file = pandas.read_feather(directory)
+    html_files = panda_file['html']
+    strings = [file.decode('UTF-8', errors='ignore') for file in html_files]
+    pickle_dump('data/feather/strings', strings)
+
+
+def pickle_panda_trees_from_string(directory='data/feather/strings'):
+    strings = pickle_load(directory)
+    index = 0
+    non_working = []
+    some_val = 2
+    while index < some_val:
+        temp_non_working, i, trees = pickle_batch_of_trees(strings, index)
+        with open('data/feather/tree_batches/' + str(index), 'wb') as handle:
+            pickle.dump(trees, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        non_working += temp_non_working
+        index = i
+    pickle_dump('data/feather/non_working', non_working)
+
+
+def pickle_batch_of_trees(strings, index):
+    trees, non_working = [], []
+    i = index
+    while len(trees) < 1000 and i < len(strings):
+        try:
+            trees.append(string_to_tree(strings[i]))
+        except Exception:
+            # print('File #: ', i)
+            non_working.append(i)
+        i += 1
+    print('done with batch and index = ', i)
+    return non_working, i, trees
 
 
 def dir_to_str(directory: str) -> [str]:
@@ -258,6 +340,14 @@ def dir_to_str(directory: str) -> [str]:
     return strings
 
 
+def pandas_to_strings(directory: str, max_strings=3000) -> [str]:
+    panda_directory = directory + '/websites.feather'
+    panda_file = pandas.read_feather(panda_directory)
+    panda_file_cut = panda_file[:max_strings]
+    html_files = panda_file_cut['html']
+    return [file.decode('UTF-8', errors='ignore') for file in html_files]
+
+
 def pickle_dump(directory: str, item: any) -> None:
     """ Pickles a file into a given directory """
     with open(directory, 'wb') as handle:
@@ -269,5 +359,25 @@ def pickle_load(directory: str) -> any:
     with open(directory, 'rb') as handle:
         try:
             return pickle.load(handle)
-        except:
+        except Exception:
             print('Could not load handle: ', handle)
+
+
+
+def test():
+    dir = 'data/random/text_files'
+    with open(dir + "/tags.txt", 'w', errors='ignore') as tag_f, \
+            open(dir + "/keys.txt", 'w', errors='ignore') as key_f, \
+            open(dir + "/values.txt", 'w', errors='ignore') as value_f, \
+            open(dir + "/data.txt", 'w', errors='ignore') as data_f, \
+            open(dir + "/total.txt", 'w', errors='ignore') as total_f:
+
+        strings = dir_to_str('data/random')
+        for string in strings:
+            parser = MyHTMLParser([tag_f, key_f, value_f, data_f, total_f])
+            parser.feed(string)
+
+        print('hi')
+
+
+#test()
