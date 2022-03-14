@@ -65,7 +65,7 @@ class BaseTokenizer:
                 tag = tag_vocab.reverse(val)
             elif i % 2 == 0:
                 attrs.append((key_vocab.reverse(val), value_vocab.reverse(node_token[i + 1])))
-        return HtmlNode(depth=depth, tag=tag, attrs=attrs)
+        return HtmlNode(depth=depth - self.offset, tag=tag, attrs=attrs)
 
     def back_to_tree(self, tree_token) -> HtmlNode:
         """ Build tree from token
@@ -123,6 +123,21 @@ class KeyOnlyTokenizer(BaseTokenizer):
     def handle_attr(self, key: str, value: int) -> List[int]:
         return [self.keys[key]]
 
+    def back_to_node(self, node_token: Tensor) -> HtmlNode:
+        """ Build node back from token
+        Dont use"""
+        tag_vocab, key_vocab, value_vocab = self.vocabs * 3 if self.total else self.vocabs
+        attrs = []
+        for i, val in enumerate(node_token):
+            val = int(val)
+            if i == 0:
+                depth = node_token[0]
+            elif i == 1:
+                tag = tag_vocab.reverse(val)
+            else:
+                attrs.append((key_vocab.reverse(val), ""))
+        return HtmlNode(depth=depth - self.offset, tag=tag, attrs=attrs)
+
 
 class TreeTokenizer:
     def __init__(self, vocabs: List[Vocabulary], total=False, key_only=False):
@@ -133,6 +148,27 @@ class TreeTokenizer:
 
     def __call__(self, tree: HtmlNode) -> List[List[int]]:
         return [self.node_tokenizer(node) for node in tree.path]
+
+    def back_to_tree(self, tree_token) -> HtmlNode:
+        """ Build tree from token
+        Dont use"""
+        path = [self.node_tokenizer.back_to_node(node_token) for node_token in tree_token]
+        depths = [node.depth for node in path]
+        # print([node.tag for node in path])
+        # print(depths)
+        for child_index, child_node in enumerate(path):
+            for depth_index, depth in enumerate(depths):
+                if depth_index >= child_index + 1 and depth == child_node.depth - 1:
+                    # print('indexes: ', depth_index, depth)
+                    # print('child_index: ', child_index)
+                    path[depth_index].children.append(child_node)
+                    break
+        root = path[-1]
+        root.build_path()
+        return root
+
+
+
 
 
 

@@ -121,7 +121,7 @@ class BaseModel(LightningModule):
                                  num_workers=num_cpus)
         test_loader = DataLoader(test_data, batch_size=self.batch_size,
                                  num_workers=num_cpus)
-        return [train_loader] * 3 #, eval_loader, test_loader
+        return train_loader, eval_loader, test_loader
 
     def configure_similarity(self):
         if self.similarity_type == 'cosine':

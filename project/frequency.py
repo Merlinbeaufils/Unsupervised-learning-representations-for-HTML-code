@@ -23,11 +23,10 @@ class Vocabulary(dict):  # Abstract dict class creating a tokenizing map from a 
     """
     def __init__(self, freq: dict, floor: int = 10):
         super().__init__()
-        self.__setitem__('<oov>', 0)
-        self.__setitem__('<ignore>', 1)
+        self.__setitem__('<ignore>', 0)
+        self.__setitem__('<oov>', 1)
         self.__setitem__('<mask>', 2)
-        # self.__setitem__('<SON>', 3)
-        # self.__setitem__('<EON>', 4)
+
         self.floor = floor
         self.frequency = freq
         self.feed(freq)
@@ -44,7 +43,7 @@ class Vocabulary(dict):  # Abstract dict class creating a tokenizing map from a 
                 self.__setitem__(key, len(self.keys()))
 
     def reverse(self, val: LongTensor) -> str:
-        return list(self.frequency.keys())[val]
+        return list(self.keys())[val]
 
     def reverse_vocab(self) -> Dict:
         return {value: key for key, value in self.items()}

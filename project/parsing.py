@@ -227,7 +227,7 @@ class HtmlNode:
         """ unmask all affected nodes including itself """
         self.mask_val = 0
         for child in self.children:
-            child.mask_affected()
+            child.unmask_affected()
 
 
 
