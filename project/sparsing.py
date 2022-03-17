@@ -33,6 +33,6 @@ def sparse_depth(tree: HtmlNode, depth: int = 5):
 
 def length_depth_reduction(tree: HtmlNode, goal_size, depth):
     """ Applies both random and depth reductions """
-    random_sparse(tree, goal_size)
     sparse_depth(tree, depth)
+    random_sparse(tree, goal_size)
     return tree

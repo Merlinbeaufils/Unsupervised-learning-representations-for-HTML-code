@@ -7,12 +7,14 @@ from pytorch_lightning.utilities.types import TRAIN_DATALOADERS, EVAL_DATALOADER
 from torch import Tensor
 from torch.optim import SGD
 from torch.utils.data import DataLoader, random_split
+from torchmetrics.functional import accuracy, recall
 
 from project.models.bow_models import FlatSumBow
 from project.models.pipe_transformer import SubModelTransformer
 from project.models.recurrent_models import SimpleRnn, SubModelLstm
 
 MAX_DEPTH = 40
+
 
 
 class BaseModel(LightningModule):
@@ -67,8 +69,13 @@ class BaseModel(LightningModule):
         labels = torch.arange(reps1.size(0), device=reps1.device)  # batch_dim x batch_dim
         loss = self.loss_function(scores, labels)
 
+        acc = accuracy(scores, labels)
+        rec = recall(scores, labels, top_k=3)
+
         print(loss.item())
         self.log("train/loss", loss)
+        self.log("train/acc", acc)
+        self.log("train/rec@3", rec)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -78,13 +85,14 @@ class BaseModel(LightningModule):
         labels = torch.arange(reps1.size(0), device=reps1.device)  # batch_dim x batch_dim
         loss = self.loss_function(scores, labels)
 
-        accuracy_vector = (torch.argmax(scores, dim=1) == labels).float()
-        accuracy = accuracy_vector.mean()
+        acc = accuracy(scores, labels)
+        rec = recall(scores, labels, top_k=3)
 
         self.log("val/loss", loss)
-        self.log("val/accuracy", accuracy)
+        self.log("val/acc", acc)
+        self.log("val/rec@3", rec)
 
-        print('Validation: ', accuracy)
+        print('Validation: ', acc)
         return loss  # CHANGE
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
@@ -146,14 +154,15 @@ class BaseModel(LightningModule):
 
     def set_tree_model(self):
         name = self.tree_model_type
+        node_model = FlatSumBow(self.embedding)
         if name is None:
             tree_model = self.node_model
         elif name == 'flat':
-            tree_model = FlatSumBow(self.embedding)
+            tree_model = node_model
         elif name == 'lstm':
-            tree_model = SubModelLstm(self.node_model, hidden_size=self.embedding_dim)
+            tree_model = SubModelLstm(node_model, hidden_size=self.embedding_dim)
         elif name == 'transformer':
-            tree_model = SubModelTransformer(self.node_model, vocab_length=len(self.dataset.vocab))
+            tree_model = SubModelTransformer(node_model, vocab_length=len(self.dataset.vocab))
         else:
             raise NoTreeModel
         return tree_model

@@ -121,9 +121,11 @@ def build_trees(directory, pickle_trees: bool = False, pandas: bool = False) -> 
 
 
 def build_trees_and_files(directory, pandas: bool = False, max_trees=1000):
+    print(pandas)
     strings = dir_to_str(directory) if not pandas else pandas_to_strings(directory, max_trees * 3)
     directory = directory if not pandas else directory + '/'
     trees = strings_to_trees_and_files(strings, directory, max_trees)
+    os.makedirs(directory + 'trees', mode=0o777, exist_ok=True)
     pickle_dump(directory + 'trees/trees', trees)
     return trees
 

@@ -34,6 +34,8 @@ class BaseTokenizer:
         self.total = total
 
     def __call__(self, node: HtmlNode) -> List[int]:
+        if node.mask_val:
+            return [self.tags['<mask>']]
         depth = self.handle_depth(node.depth)
         tag = self.handle_tag(node.tag)
         attrs = list(itertools.chain(*[self.handle_attr(key, value) for key, value in node.attrs]))
@@ -123,6 +125,11 @@ class KeyOnlyTokenizer(BaseTokenizer):
     def handle_attr(self, key: str, value: int) -> List[int]:
         return [self.keys[key]]
 
+
+class NoKeysTokenizer(BaseTokenizer):
+    def handle_attr(self, key: str, value: int) -> List[int]:
+        return []
+
     def back_to_node(self, node_token: Tensor) -> HtmlNode:
         """ Build node back from token
         Dont use"""
@@ -140,8 +147,10 @@ class KeyOnlyTokenizer(BaseTokenizer):
 
 
 class TreeTokenizer:
-    def __init__(self, vocabs: List[Vocabulary], total=False, key_only=False):
-        if key_only:
+    def __init__(self, vocabs: List[Vocabulary], total=False, key_only=False, no_keys=False):
+        if no_keys:
+            self.node_tokenizer = NoKeysTokenizer(vocabs=vocabs, total=total)
+        elif key_only:
             self.node_tokenizer = KeyOnlyTokenizer(vocabs=vocabs, total=total)
         else:
             self.node_tokenizer = BaseTokenizer(vocabs=vocabs, total=total)

@@ -2,14 +2,17 @@
 import random
 from typing import Tuple, List
 
+import pandas
+from torch.functional import F
 from torch import Tensor, LongTensor
 from torch.utils.data import Dataset
 
+from project.sparsing import length_depth_reduction
 from project.frequency import Vocabulary
-from project.parsing import HtmlNode
+from project.parsing import HtmlNode, string_to_tree
 from project.sparsing import random_sparse
 from project.tree_tokenizer import Node_Tokens, Tree_Tokens, BaseTokenizer, KeyOnlyTokenizer, TreeTokenizer, \
-    TransformerTreeTokenizer
+    TransformerTreeTokenizer, NoKeysTokenizer
 
 Sample = Tuple[Node_Tokens, Tree_Tokens]
 Samples = List[Sample]
@@ -33,7 +36,8 @@ class BaseTreeDataset(Dataset):  # Tree dataset class allowing handling of html 
     """
     def __init__(self, trees: List[HtmlNode], vocabs: List[Vocabulary],
                  indexes_length=1000, total: bool = False, key_only: bool = False,
-                 build_samples: bool = True, index_config='per_tree', per_tree=10, sample_config='base'):
+                 build_samples: bool = True, index_config='per_tree', per_tree=10,
+                 sample_config='base', no_keys=True):
         # indexes is a list of (tree_path_index, tree_index) tuples indicating (node, tree)
         super().__init__()
         self.trees:   Forest = trees
@@ -41,6 +45,7 @@ class BaseTreeDataset(Dataset):  # Tree dataset class allowing handling of html 
         self.total = total
         self.vocab = vocabs[0]
         self.key_only = key_only
+        self.no_keys = no_keys
         self.node_tokenizer, self.tree_tokenizer = self.set_tokenizers(vocabs=vocabs)
         self.index_builder: BaseIndexBuilder = self.config_index_builder(indexes_length, index_config, per_tree)
         self.sample_builder: BaseSampleBuilder = self.config_sample_builder(sample_config)
@@ -89,16 +94,14 @@ class BaseTreeDataset(Dataset):  # Tree dataset class allowing handling of html 
             random_sparse(tree, max_size)
 
     def set_tokenizers(self, vocabs: List[Vocabulary]):
-        if self.key_only:
+        if self.no_keys:
+            node_tokenizer = NoKeysTokenizer(vocabs=vocabs, total=self.total)
+        elif self.key_only:
             node_tokenizer = KeyOnlyTokenizer(vocabs=vocabs, total=self.total)
         else:
             node_tokenizer = BaseTokenizer(vocabs=vocabs, total=self.total)
-        tree_tokenizer = TreeTokenizer(vocabs=vocabs, total=self.total)
+        tree_tokenizer = TreeTokenizer(vocabs=vocabs, total=self.total, key_only=self.key_only, no_keys=self.no_keys)
         return node_tokenizer, tree_tokenizer
-
-
-
-
 
 
 class ContTreeDataset(BaseTreeDataset):  # Samples are of type: (masked_tree, tree)
@@ -146,7 +149,7 @@ class TransformerTreeDataset(BaseTreeDataset):
         self.reduce_trees(100)
         self.indexes = self.index_builder.build_indexes()
         self.build_samples(indexes=self.indexes)
-        self.padding_tokens()
+        self.padding_tokens(0)
 
     def build_sample(self, tree_index_path, tree_index) -> Tuple[List, List]:
         # node: HtmlNode = self.trees[tree_index].path[tree_index_path]
@@ -180,6 +183,91 @@ class TransformerTreeDataset(BaseTreeDataset):
     # return length
     def __len__(self):
         return len(self.samples)
+
+
+class TreeClassifierDataset(Dataset):
+    def __init__(self, panda_file_path, num_samples, vocabs, total=True, key_only=False, no_keys=False):
+        super(TreeClassifierDataset, self).__init__()
+        self.samples = []
+        self.vocabs = vocabs
+        self.total = total
+        self.key_only = key_only
+        self.no_keys = no_keys
+
+        self.tree_tokenizer = self.set_tokenizer()
+
+        self.tree_node_max = 0
+        self.tree_max = 0
+
+        pandas_file = pandas.read_feather(panda_file_path)
+        pandas_file = pandas_file.sample(frac=1)
+
+        self.num_samples = num_samples
+        labels = set(pandas_file['tld'])
+        labels = [x for x in labels]
+        self.labels_to_int = {labels[i]: i for i in range(len(labels))}
+        self.num_labels = len(set(pandas_file['tld']))
+        self.build_samples(pandas_file)
+        self.pad_samples()
+
+
+    def __getitem__(self, item):
+        sample = self.samples[item]
+        feature = Tensor(sample[0])
+        label = F.one_hot(Tensor([sample[1]]).long(), num_classes=self.num_labels).view(self.num_labels)
+        return feature, label
+
+    def __len__(self):
+        return len(self.samples)
+
+    def build_samples(self, pandas_file):
+        i = 0
+        print('building samples...')
+        for element in pandas_file.iterrows():
+            if len(self.samples) > self.num_samples:
+                return
+            i += 1
+            string, label = element[1]['html'], element[1]['tld']
+
+            try:
+                tree = self.build_tree(string)
+                label = self.labels_to_int[label]
+                self.samples.append((tree, label))
+                print(i)
+            except Exception:
+                pass
+
+    def build_tree(self, string_bytes):
+        string = string_bytes.decode('UTF-8', errors='ignore')
+        tree = string_to_tree(string)
+        tree = length_depth_reduction(tree, 500, 5)
+        tree_token = self.tree_tokenizer(tree)
+
+        # update max sizes
+        self.tree_node_max = max(self.tree_node_max, len(max(tree_token, default=0, key=len)))
+        self.tree_max = max(len(tree_token), self.tree_max)
+
+        return tree_token
+
+    def set_tokenizer(self):
+        return TreeTokenizer(self.vocabs, self.total, self.key_only)
+
+    def pad_samples(self):
+        print('padding samples...')
+        for sample in self.samples:
+            tree = sample[0]
+            pad_tree(tree, self.tree_max, self.tree_node_max)
+
+
+
+
+
+
+
+
+
+
+
 
 def pad_tree(tree: List, length_tree: int, length_node: int) -> None:
     for node in tree:

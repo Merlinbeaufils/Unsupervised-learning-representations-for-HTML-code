@@ -27,7 +27,7 @@ class MyHTMLParser(HTMLParser):
         self.tree: HtmlNode = HtmlNode("html", attrs=[], father=None, depth=0)
         self.head: HtmlNode = HtmlNode("head", attrs=[], father=self.tree, depth=1, child_index=0, root_node=self.tree)
         self.body: HtmlNode = HtmlNode("body", attrs=[], father=self.tree, depth=1, child_index=1, root_node=self.tree)
-        self.tree.children = [self.body, self.head]
+        self.tree.children = [self.head, self.body]
         self.node_stack = [self.tree, self.head]
         self.build_files = 0
         if files is not None:
@@ -72,7 +72,8 @@ class MyHTMLParser(HTMLParser):
             if tag == self.node_stack[-1].tag:
                 self.node_stack.pop()
             else:
-                raise Exception
+                self.node_stack.pop()
+                self.handle_endtag(tag)
 
         if self.build_files and tag == 'html':
             self.data_file.write('<<<START_OF_HTML_FILE>>>')
@@ -143,7 +144,7 @@ class HtmlNode:
     def __str__(self):
         # root_depth = self.depth if root_depth == -1 else root_depth
         indent = " " * 4 * self.depth
-        children_str = "\n".join(map(str, self.children.__reversed__()))
+        children_str = "\n".join(map(str, self.children))
         if children_str:
             children_str = "\n" + children_str
         if self.sim_string:
@@ -247,6 +248,7 @@ def string_to_tree(string: str) -> HtmlNode:
 
 def strings_to_trees_and_files(strings: List[str], directory: str, max_trees=1000):
     # panda_dir = directory + '/masked_websites.feather'
+    os.makedirs(directory + '/text_files', mode=0o777, exist_ok=True)
     directory = directory + '/text_files'
     with open(directory + "/tags.txt", 'w', errors='ignore') as tag_f, \
             open(directory + "/keys.txt", 'w', errors='ignore') as key_f, \
@@ -341,8 +343,9 @@ def dir_to_str(directory: str) -> [str]:
 
 
 def pandas_to_strings(directory: str, max_strings=3000) -> [str]:
-    panda_directory = directory + '/websites.feather'
+    panda_directory = directory + 'websites.feather'
     panda_file = pandas.read_feather(panda_directory)
+    panda_file = panda_file.sample(frac=1)
     panda_file_cut = panda_file[:max_strings]
     html_files = panda_file_cut['html']
     return [file.decode('UTF-8', errors='ignore') for file in html_files]
