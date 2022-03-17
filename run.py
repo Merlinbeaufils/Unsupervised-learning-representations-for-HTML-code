@@ -106,10 +106,13 @@ def set_dataloader(dataloader: str, trees: List[HtmlNode], indexes_size: int,
     print('setting datasets...')
     vocabs = [args.total] if args.total_vocab else [args.tags, args.keys, args.values]
     vocab = args.total
+    data_config = 'keys_only' if args.keys_only else 'normal'
+    data_config = 'no_keys' if args.no_keys else data_config
     if dataloader == 'base':
         dataset = BaseTreeDataset(trees=trees, indexes_length=indexes_size,
                                   total=True, key_only=True, vocabs=vocabs, index_config=args.index_config,
                                   per_tree=args.indexes_per_tree, sample_config=args.sample_config, no_keys=args.no_keys)
+
 
     elif dataloader == 'Cont':
         dataset = ContTreeDataset(trees=trees, indexes_length=indexes_size,
@@ -129,7 +132,7 @@ def set_dataloader(dataloader: str, trees: List[HtmlNode], indexes_size: int,
     os.makedirs(args.setup_location + 'dataloaders', mode=0o777, exist_ok=True)
     # pickle_dump(args.setup_location + 'dataloaders/train_' + dataloader, train_dataloader)
     # pickle_dump(args.setup_location + 'dataloaders/test_' + dataloader, test_dataloader)
-    pickle_dump(args.setup_location + 'dataloaders/dataset_' + dataloader, dataset)
+    pickle_dump(args.setup_location + 'dataloaders/dataset_' + data_config, dataset)
     return None, None, dataset
 
 
@@ -149,7 +152,10 @@ def main(args: Namespace) -> None:
             args.total = pickle_load(directory=setup_location + 'vocabs/total')
             # train_dataloader = pickle_load(directory=setup_location + 'dataloaders/train_' + args.dataloader)
             # test_dataloader = pickle_load(directory=setup_location + 'dataloaders/test_' + args.dataloader)
-            dataset = pickle_load(directory=setup_location + 'dataloaders/dataset_' + args.dataloader)
+            data_config = 'keys_only' if args.keys_only else 'normal'
+            data_config = 'no_keys' if args.no_keys else data_config
+
+            dataset = pickle_load(directory=setup_location + 'dataloaders/dataset_' + data_config)
         else:
             print('building trees and files...')
             args.trees = build_trees_and_files(directory=args.setup_location, pandas=not args.not_pandas, max_trees=args.num_trees)
