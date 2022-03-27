@@ -5,7 +5,7 @@ from typing import Tuple, List
 
 from torch import LongTensor
 from project.parsing import dir_to_str, strings_to_trees, pickle_dump, HtmlNode, pandas_to_strings, \
-    strings_to_trees_and_files
+    strings_to_trees_and_files, sep_token, pickle_load
 from sklearn.feature_extraction.text import TfidfVectorizer
 import codecs
 FILE_SPLIT_TOKEN = '<<<START_OF_HTML_FILE>>>'
@@ -120,13 +120,13 @@ def build_trees(directory, pickle_trees: bool = False, pandas: bool = False) -> 
     return trees
 
 
-def build_trees_and_files(directory, pandas: bool = False, max_trees=1000):
+def build_trees_and_files(directory, pandas: bool = False, max_trees=1000, framework='pretrain'):
     print(pandas)
     strings = dir_to_str(directory) if not pandas else pandas_to_strings(directory, max_trees * 3)
-    directory = directory if not pandas else directory + '/'
-    trees = strings_to_trees_and_files(strings, directory, max_trees)
-    os.makedirs(directory + 'trees', mode=0o777, exist_ok=True)
-    pickle_dump(directory + 'trees/trees', trees)
+    directory = directory if not pandas else directory
+    trees = strings_to_trees_and_files(strings, directory, max_trees, framework)
+    os.makedirs(directory + 'trees_' + framework, mode=0o777, exist_ok=True)
+    pickle_dump(directory + 'trees_' + framework + '/trees', trees)
     return trees
 
 
@@ -139,7 +139,7 @@ def word_count(file_in: str, pickle_file: str) -> Dict[str, int]:
     """
     with open(file_in, 'r') as file:
         dictionary = {}
-        words = file.read().split()
+        words = file.read().split(sep_token)
         for word in words:
             if word in dictionary:
                 dictionary[word] += 1
@@ -151,7 +151,7 @@ def word_count(file_in: str, pickle_file: str) -> Dict[str, int]:
         return sorted_dictionary
 
 
-def build_vocabularies(directory, tag_floor=2, key_floor=2, value_floor=2, total_floor=10)\
+def build_vocabularies(directory, tag_floor=2, key_floor=2, value_floor=2, total_floor=10, framework='pretrain')\
         -> Tuple[Vocabulary, Vocabulary, Vocabulary, Vocabulary]:
     """
     Make sure to build text files before
@@ -163,17 +163,25 @@ def build_vocabularies(directory, tag_floor=2, key_floor=2, value_floor=2, total
     :param total_floor: minimum for total_vocab
     :return: Tag vocabuly, key vocabulary, value vocabulary, total vocabulry
     """
-    os.makedirs(directory + 'frequency_dict', mode=0o777, exist_ok=True)
+    os.makedirs(directory + 'frequency_dict_' + framework, mode=0o777, exist_ok=True)
     os.makedirs(directory + 'vocabs', mode=0o777, exist_ok=True)
-    keys = word_count(directory + 'text_files/keys.txt', directory + 'frequency_dict/key_freq')
-    values = word_count(directory + 'text_files/values.txt', directory + 'frequency_dict/values_freq')
-    tags = word_count(directory + 'text_files/tags.txt', directory + 'frequency_dict/tags_freq')
-    total = word_count(directory + 'text_files/total.txt', directory + 'frequency_dict/total_freq')
+    file_loc = directory + 'text_files_' + framework
+    keys = word_count(file_loc + '/keys.txt', directory + 'frequency_dict_' + framework + '/key_freq')
+    values = word_count(file_loc + '/values.txt', directory + 'frequency_dict_' + framework + '/values_freq')
+    tags = word_count(file_loc + '/tags.txt', directory + 'frequency_dict_' + framework + '/tags_freq')
+    total = word_count(file_loc + '/total.txt', directory + 'frequency_dict_' + framework + '/total_freq')
     tag_vocab, key_vocab = Vocabulary(tags, tag_floor), Vocabulary(keys, key_floor)
     total_vocab, value_vocab = Vocabulary(total, total_floor), Vocabulary(values, value_floor)
     pickle_dump(directory + 'vocabs/tags', tag_vocab), pickle_dump(directory + 'vocabs/keys', key_vocab)
     pickle_dump(directory + 'vocabs/values', value_vocab), pickle_dump(directory + 'vocabs/total', total_vocab)
     return tag_vocab, key_vocab, value_vocab, total_vocab
+
+
+def build_vocabularies2(directory, framework='pretrain'):
+    file_loc = directory + 'text_files_' + framework
+    depth = word_count(file_loc + '/depth.txt', directory + 'frequency_dict/depth_freq')
+    node = word_count(file_loc + '/node.txt', directory + 'frequency_dict/node_freq')
+    return depth, node
 
 
 def term_frequency(data_file):
@@ -191,9 +199,10 @@ def pickle_trees(directory):
 
 
 def test():
-    trees = build_trees_and_files(directory='data/feather', pandas=True, max_trees=10)
-    matrix, vectorizer = term_frequency('data/feather/text_files/data.txt')
-    print('hi')
+    pass
+    # trees = build_trees_and_files(directory='data/feather', pandas=True, max_trees=10)
+    # matrix, vectorizer = term_frequency('data/feather/text_files/data.txt')
+    # print('hi')
 
 
 #test()

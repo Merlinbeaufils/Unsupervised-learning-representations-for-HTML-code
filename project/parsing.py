@@ -8,6 +8,8 @@ from typing import List, Tuple
 import numpy as np
 import pandas
 
+sep_token = ")*&&SEPARATION)*&&"
+
 dont_handle_data = ['script', 'style']
 do_handle_data = ['p', 'span', 'br', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'blockquote', 'q',
                   'li', 'dt', 'dd', 'mark', 'ins', 'del', 'sup', 'sub', 'small', 'i', 'b']
@@ -32,7 +34,8 @@ class MyHTMLParser(HTMLParser):
         self.build_files = 0
         if files is not None:
             self.build_files = 1
-            self.tag_file, self.key_file, self.value_file, self.data_file, self.total_file = files
+            self.tag_file, self.key_file, self.value_file, self.data_file, \
+                self.total_file, self.depth_file, self.node_file = files
         self.key_only = key_only
 
     def handle_starttag(self, tag, attrs):
@@ -46,26 +49,31 @@ class MyHTMLParser(HTMLParser):
         elif tag.lower() == "body":
             self.node_stack.append(self.body)
             self.body.attrs = attrs
+            node = self.body
 
         elif tag.lower() == 'html':
             self.tree.attrs = attrs
+            node = self.tree
 
         elif tag.lower() == 'head':
             self.head.attrs = attrs
+            node = self.head
 
         if tag in void_tags:
             self.node_stack.pop()
 
         if self.build_files:
-            self.tag_file.write(tag + " ")
-            self.total_file.write(tag + " ")
+            self.tag_file.write(tag + sep_token)
+            self.depth_file.write(str(node.depth) + sep_token)
+            self.node_file.write(str(tag) + str(attrs) + sep_token)
+            self.total_file.write(tag + sep_token)
             for attr in attrs:
                 key, value = attr
-                self.key_file.write(str(key) + " ")
-                self.value_file.write(str(value) + " ")
-                self.total_file.write(str(key) + " ")
+                self.key_file.write(str(key) + sep_token)
+                self.value_file.write(str(value) + sep_token)
+                self.total_file.write(str(key) + sep_token)
                 if not self.key_only:
-                    self.total_file.write(str(value) + " ")
+                    self.total_file.write(str(value) + sep_token)
 
     def handle_endtag(self, tag):
         if tag not in void_tags:
@@ -87,7 +95,7 @@ class MyHTMLParser(HTMLParser):
         if data and handle_data:
             curr_node.data += data
             if self.build_files:
-                self.data_file.write(tag + ':' + data + " ")
+                self.data_file.write(tag + ':' + data + sep_token)
 
 
 class HtmlNode:
@@ -246,29 +254,31 @@ def string_to_tree(string: str) -> HtmlNode:
     return parser.tree
 
 
-def strings_to_trees_and_files(strings: List[str], directory: str, max_trees=1000):
+def strings_to_trees_and_files(strings: List[str], directory: str, max_trees=1000, framework='pretrain'):
     # panda_dir = directory + '/masked_websites.feather'
-    os.makedirs(directory + '/text_files', mode=0o777, exist_ok=True)
-    directory = directory + '/text_files'
+    os.makedirs(directory + '/text_files_' + framework, mode=0o777, exist_ok=True)
+    directory = directory + '/text_files_' + framework
     with open(directory + "/tags.txt", 'w', errors='ignore') as tag_f, \
             open(directory + "/keys.txt", 'w', errors='ignore') as key_f, \
             open(directory + "/values.txt", 'w', errors='ignore') as value_f, \
             open(directory + "/data.txt", 'w', errors='ignore') as data_f, \
-            open(directory + "/total.txt", 'w', errors='ignore') as total_f:
+            open(directory + "/total.txt", 'w', errors='ignore') as total_f, \
+            open(directory + "/depth.txt", 'w', errors='ignore') as depth_f, \
+            open(directory + "/node.txt", 'w', errors='ignore') as node_f:
         trees = []
         i = 0
-        mask = []
         while len(trees) < max_trees and i < len(strings):
             string = strings[i]
-            parser = MyHTMLParser([tag_f, key_f, value_f, data_f, total_f])
+            parser = MyHTMLParser([tag_f, key_f, value_f, data_f, total_f, depth_f, node_f])
             try:
                 parser.feed(string)
                 tree = parser.tree
                 tree.build_path()
                 trees.append(tree)
-                mask.append(True)
+                if not len(trees) % 200:
+                    print("Gone through: ", i,' and length of trees is: ', len(trees))
             except Exception:
-                mask.append(False)
+                print("THATS NO BUENO~~~~~~~~~~~~~~~~~~~~~")
             i += 1
     return trees
 
@@ -342,13 +352,14 @@ def dir_to_str(directory: str) -> [str]:
     return strings
 
 
-def pandas_to_strings(directory: str, max_strings=3000) -> [str]:
-    panda_directory = directory + 'websites.feather'
-    panda_file = pandas.read_feather(panda_directory)
+def pandas_to_strings(directory: str, max_strings=3000, framework='pretrain') -> [str]:
+    panda_directory = directory + 'final_data_' + framework + '.csv.gz'
+    panda_file = pandas.read_csv(panda_directory, compression='gzip')
     panda_file = panda_file.sample(frac=1)
-    panda_file_cut = panda_file[:max_strings]
-    html_files = panda_file_cut['html']
-    return [file.decode('UTF-8', errors='ignore') for file in html_files]
+    panda_file = panda_file.reset_index()[['html', 'tld', 'url']]
+    panda_file = panda_file[:max_strings]
+    return panda_file['html']
+    # return [file.decode('UTF-8', errors='ignore') for file in html_files]
 
 
 def pickle_dump(directory: str, item: any) -> None:
@@ -373,11 +384,13 @@ def test():
             open(dir + "/keys.txt", 'w', errors='ignore') as key_f, \
             open(dir + "/values.txt", 'w', errors='ignore') as value_f, \
             open(dir + "/data.txt", 'w', errors='ignore') as data_f, \
-            open(dir + "/total.txt", 'w', errors='ignore') as total_f:
+            open(dir + "/total.txt", 'w', errors='ignore') as total_f, \
+            open(dir + "/depth.txt", 'w', errors='ignore') as depth_f, \
+            open(dir + "/node.txt", 'w', errors = 'ignore') as node_f:
 
         strings = dir_to_str('data/random')
         for string in strings:
-            parser = MyHTMLParser([tag_f, key_f, value_f, data_f, total_f])
+            parser = MyHTMLParser([tag_f, key_f, value_f, data_f, total_f, depth_f, node_f])
             parser.feed(string)
 
         print('hi')

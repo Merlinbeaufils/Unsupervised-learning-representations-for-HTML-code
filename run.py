@@ -4,11 +4,15 @@ from typing import Tuple, List
 
 import pandas
 import torch
+import sys
 from sklearn.feature_extraction.text import TfidfVectorizer
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning import loggers as pl_loggers
 from torch.utils.data import DataLoader, random_split
+sys.setrecursionlimit(50000)
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 
 from project.dataloading import BaseTreeDataset, ContTreeDataset, TransformerTreeDataset, TreeClassifierDataset
 from project.finetune_model_pipe import TreeClassifier
@@ -61,7 +65,7 @@ def reduce_trees(reduction: str, trees: List[HtmlNode], args: Namespace) -> None
         raise NoReduction
     for tree in trees:
         function(tree, **kwargs)
-    pickle_dump(directory=args.setup_location + 'trees/trees_short', item=trees)
+    pickle_dump(directory=args.setup_location + 'trees_pretrain/trees_short', item=trees)
     args.reduction_function = function
 
 
@@ -76,11 +80,12 @@ def set_model(args, dataset):
         elif config == 'transformer':
             node_model, tree_model = ('transformer', None) if not args.separate else ('transformer', 'transformer')
         kwargs = {'dataset': dataset, 'node_model_type': node_model,
-                  'vocab_size': len(args.total), 'tree_model_type': tree_model,
+                  'vocab_size': len(dataset.vocab), 'tree_model_type': tree_model,
                   'optimizer_type': args.optimizer, 'batch_size': args.batch_size,
                   'lr': args.lr, 'loss_type': args.loss, 'similarity_type': args.similarity,
                   'embedding_dim': args.embedding_dim, 'train_proportion': args.train_proportion,
-                  'num_cpus': args.num_cpus}
+                  'num_cpus': args.num_cpus, 'num_layers': args.num_layers, 'nheads': args.nheads,
+                  'transformer_config': args.transformer_config}
         model = BaseModel(**kwargs)
         args.log_name = config
     elif config == 'transformer.':
@@ -106,12 +111,12 @@ def set_dataloader(dataloader: str, trees: List[HtmlNode], indexes_size: int,
     print('setting datasets...')
     vocabs = [args.total] if args.total_vocab else [args.tags, args.keys, args.values]
     vocab = args.total
-    data_config = 'keys_only' if args.keys_only else 'normal'
-    data_config = 'no_keys' if args.no_keys else data_config
+    data_config = args.data_config
     if dataloader == 'base':
         dataset = BaseTreeDataset(trees=trees, indexes_length=indexes_size,
                                   total=True, key_only=True, vocabs=vocabs, index_config=args.index_config,
-                                  per_tree=args.indexes_per_tree, sample_config=args.sample_config, no_keys=args.no_keys)
+                                  per_tree=args.indexes_per_tree, sample_config=args.sample_config,
+                                  data_config=data_config)
 
 
     elif dataloader == 'Cont':
@@ -124,14 +129,8 @@ def set_dataloader(dataloader: str, trees: List[HtmlNode], indexes_size: int,
                                          per_tree=args.per_tree)
     else:
         raise NoDataloader
-    train_size = int(train_proportion * len(dataset))
-    test_size = len(dataset) - train_size
-    train_data, test_data = random_split(dataset, [train_size, test_size])
-    # train_dataloader, test_dataloader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True), \
-    #                                    DataLoader(test_data, batch_size=args.batch_size, shuffle=True)
     os.makedirs(args.setup_location + 'dataloaders', mode=0o777, exist_ok=True)
-    # pickle_dump(args.setup_location + 'dataloaders/train_' + dataloader, train_dataloader)
-    # pickle_dump(args.setup_location + 'dataloaders/test_' + dataloader, test_dataloader)
+    print(sys.getsizeof(dataset))
     pickle_dump(args.setup_location + 'dataloaders/dataset_' + data_config, dataset)
     return None, None, dataset
 
@@ -145,20 +144,20 @@ def main(args: Namespace) -> None:
     setup_location = args.setup_location
     if args.framework == 'pretrain':
         if args.skip_setup:
-            args.trees = pickle_load(directory=setup_location + 'trees/trees_short')
-            args.tags = pickle_load(directory=setup_location + 'vocabs/tags')
-            args.keys = pickle_load(directory=setup_location + 'vocabs/keys')
-            args.values = pickle_load(directory=setup_location + 'vocabs/values')
-            args.total = pickle_load(directory=setup_location + 'vocabs/total')
+            # args.trees = pickle_load(directory=setup_location + 'trees_pretrain/trees_short')
+            # args.total = pickle_load(directory=setup_location + 'vocabs/total')
             # train_dataloader = pickle_load(directory=setup_location + 'dataloaders/train_' + args.dataloader)
             # test_dataloader = pickle_load(directory=setup_location + 'dataloaders/test_' + args.dataloader)
-            data_config = 'keys_only' if args.keys_only else 'normal'
-            data_config = 'no_keys' if args.no_keys else data_config
+            data_config = args.data_config
 
             dataset = pickle_load(directory=setup_location + 'dataloaders/dataset_' + data_config)
         else:
             print('building trees and files...')
-            args.trees = build_trees_and_files(directory=args.setup_location, pandas=not args.not_pandas, max_trees=args.num_trees)
+            if not args.dont_build_trees:
+                args.trees = build_trees_and_files(directory=args.setup_location, pandas=not args.not_pandas,
+                                                   max_trees=args.num_trees, framework=args.framework)
+            else:
+                args.trees = pickle_load(directory=setup_location + 'trees_pretrain/trees_short')
             # if args.build_trees:
             #     args.trees = build_trees(directory=setup_location, pickle_trees=args.pickle_trees, pandas=args.pandas)
             # else:
@@ -166,10 +165,16 @@ def main(args: Namespace) -> None:
 
             print('building vocabs ...')
             # build_files(setup_location, setup_location + 'text_files', key_only=args.key_only, pandas=args.pandas)
-            args.tags, args.keys, args.values, args.total = \
-                build_vocabularies(directory=setup_location, total_floor=args.total_floor)
+            if not args.dont_build_trees:
+                args.tags, args.keys, args.values, args.total = \
+                    build_vocabularies(directory=setup_location, total_floor=args.total_floor)
+            else:
+                # args.tags = pickle_load(directory=setup_location + 'vocabs/tags')
+                # args.keys = pickle_load(directory=setup_location + 'vocabs/keys')
+                # args.values = pickle_load(directory=setup_location + 'vocabs/values')
+                args.total = pickle_load(directory=setup_location + 'vocabs/total')
 
-            args.data_matrix, args.vectorizer = term_frequency(setup_location + 'text_files/data.txt')
+            # args.data_matrix, args.vectorizer = term_frequency(setup_location + 'text_files_' + args.framework + '/data.txt')
 
             # else:
             #     args.tags = pickle_load(directory=setup_location + 'vocabs/tags')
@@ -179,6 +184,8 @@ def main(args: Namespace) -> None:
 
             reduce_trees(args.reduction, args.trees, args)
 
+            data_config = args.data_config
+            print(data_config)
             train_dataloader, test_dataloader, dataset = set_dataloader(dataloader=args.dataloader, trees=args.trees,
                                                                         indexes_size=args.indexes_size,
                                                                         train_proportion=args.train_proportion, args=args)
@@ -195,26 +202,32 @@ def main(args: Namespace) -> None:
     elif args.framework == 'finetune':
         args.total = pickle_load(directory=setup_location + 'vocabs/total')
         print('building dataset...')
+        data_config = args.data_config
         if args.skip_setup:
-            dataset = pickle_load(directory=setup_location + 'dataloaders/dataset_' + 'classifier')
+            dataset = pickle_load(directory=setup_location + 'dataloaders/dataset_classifier_' + data_config)
         else:
-            dataset = TreeClassifierDataset(args.setup_location + 'websites.feather', args.indexes_size, [args.total],
-                                            True, key_only=args.key_only, no_keys=args.no_keys)
-            if args.indexes_size < len(dataset):
-                dataset, _ = random_split(dataset, [args.indexes_size, len(dataset)-args.indexes_size])
-
-            pickle_dump(args.setup_location + 'dataloaders/dataset_classifier', dataset)
+            print(data_config)
+            dataset = TreeClassifierDataset(args.setup_location + 'final_data_finetune.csv.gz',
+                                            num_samples=args.indexes_size,
+                                            vocabs=[args.total], dont_build_trees=args.dont_build_trees,
+                                            total=True, key_only=args.key_only, data_config=data_config)
+            # if args.indexes_size < len(dataset):
+            #     dataset, _ = random_split(dataset, [args.indexes_size, len(dataset)-args.indexes_size])
+            print("Size of dataset file: ", sys.getsizeof(dataset))
+            pickle_dump(args.setup_location + 'dataloaders/dataset_classifier_' + data_config, dataset)
+        if args.stop:
+            raise Stop
         print('building model...')
         model = TreeClassifier('res_and_ckpts/' + args.experiment_name + '/checkpoints/pretrain/' + args.configuration + '.ckpt',
                                dataset, args.embedding_dim, dataset.num_labels, 'sgd',
                                args.train_proportion, args.num_cpus, args.configuration, args.batch_size, args.lr)
-        args.log_name = 'bow'
+        args.log_name = args.configuration
 
     else:
         raise NoFramework
     save_folder = 'res_and_ckpts/' + args.experiment_name + '/tb_logs/' + args.framework
     os.makedirs(save_folder, mode=0o777, exist_ok=True)
-    os.makedirs('res_and_ckpts/' + args.experiment_name + '/checkpoints/' + args.framework, mode = 0o777, exist_ok=True)
+    os.makedirs('res_and_ckpts/' + args.experiment_name + '/checkpoints/' + args.framework, mode=0o777, exist_ok=True)
     logger = TensorBoardLogger(save_folder, name=args.log_name)
 
     if args.num_gpus > 0:
@@ -223,7 +236,8 @@ def main(args: Namespace) -> None:
         gpus=args.num_gpus,
         logger=[logger],
         max_epochs=args.num_epochs,
-        log_every_n_steps=1,
+        enable_checkpointing=False,
+        log_every_n_steps=50,
         default_root_dir='res_and_ckpts/' + args.experiment_name + '/checkpoints/' + args.framework
     )
     trainer.fit(model)
@@ -293,7 +307,7 @@ if __name__ == "__main__":
     parser.add_argument('--drop_last', type=bool, default=True)
     parser.add_argument('--shuffle', type=bool, default=True)
     parser.add_argument('--n_code', type=int, default=8)
-    parser.add_argument('--n_heads', type=int, default=8)
+    parser.add_argument('--nheads', type=int, default=4)
     parser.add_argument('--droupout', type=float, default=0.1)
     parser.add_argument('--max_seq_len', type=int, default=512)
     parser.add_argument('--weight_decay', type=float, default=1e-4)
@@ -303,11 +317,19 @@ if __name__ == "__main__":
     parser.add_argument('--run_name', type=str, default='')
     parser.add_argument('--indexes_per_tree', type=int, default=10)
     parser.add_argument('--index_config', type=str, default='per_tree')
-    parser.add_argument('--sample_config', type=str, default='base')
+    parser.add_argument('--sample_config', type=str, default='separate')
     parser.add_argument('--framework', type=str, default='pretrain')
     parser.add_argument('--experiment_name', type=str, default='base')
     parser.add_argument('--separate', action='store_true')
     parser.add_argument('--no_keys', action='store_true')
+    parser.add_argument('--num_layers', type=int, default=2)
+    parser.add_argument('--only_depth', action='store_true')
+    parser.add_argument('--dont_build_trees', action='store_true')
+    parser.add_argument('--transformer_config', type=str, default='last')
+    parser.add_argument('--skip_samples', action='store_true')
+    parser.add_argument('--data_config', type=str, default='normal')
+    parser.add_argument('--small', action='store_true')
+
 
     names: Namespace = parser.parse_args()
     names.total_vocab = True  # change this at some point

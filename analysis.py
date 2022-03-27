@@ -1,5 +1,9 @@
 from __future__ import annotations
+
+from matplotlib import pyplot as plt
+
 from project.frequency import *
+import seaborn as sns
 
 text_file_loc = 'data/common_sites/text_files/'
 void_tags = ["area", "base", "br", "col", "command", "embed", "hr", "img", "input", "keygen", "link", "meta", "param",
@@ -54,7 +58,25 @@ class DataParser(HTMLParser):
             self.file.write(tag + ':' + data + "<START> ")
 
 
-data_analysis()
+def analyze_frequency():
+    tag_freq = pickle_load('./data/final_feather/frequency_dict_pretrain/tags_freq')
+    # key_freq = pickle_load('./data/final_feather/frequency_dict_pretrain/key_freq')
+    # node_freq = pickle_load('./data/final_feather/frequency_dict_pretrain/node_freq')
+    # depth_freq = pickle_load('./data/final_feather/frequency_dict_pretrain/depth_freq')
+    # value_freq = pickle_load('./data/final_feather/frequency_dict_pretrain/value_freq')
+    # total_freq = pickle_load('./data/final_feather/frequency_dict_pretrain/total_freq')
+    plot = sns.displot(tag_freq.values(), bins=152, log_scale=True)
+    plot.savefig('freq_tag.png')
+    plt.bar(tag_freq.keys(), tag_freq.values())
+    plt.yscale('log')
+    plt.plot()
+    plt.savefig('./tag_frequency.png')
+
+
+analyze_frequency()
+
+
+# data_analysis()
 
 
 """

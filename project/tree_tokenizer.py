@@ -39,6 +39,8 @@ class BaseTokenizer:
         depth = self.handle_depth(node.depth)
         tag = self.handle_tag(node.tag)
         attrs = list(itertools.chain(*[self.handle_attr(key, value) for key, value in node.attrs]))
+        if len(attrs) > 50:
+            attrs = []
         data = self.handle_data(node.data)
         return depth + tag + attrs + data
 
@@ -126,6 +128,27 @@ class KeyOnlyTokenizer(BaseTokenizer):
         return [self.keys[key]]
 
 
+class OnlyDepthTokenizer(BaseTokenizer):
+    def handle_attr(self, key: str, value: int) -> List[int]:
+        return []
+
+    def handle_tag(self, tag: str) -> List[int]:
+        return []
+
+
+class OnlyTagTokenizer(BaseTokenizer):
+    def handle_attr(self, key: str, value: int) -> List[int]:
+        return []
+
+    def handle_depth(self, depth: int) -> List[int]:
+        return []
+
+
+class NoDepthTokenizer(BaseTokenizer):
+    def handle_depth(self, depth: int) -> List[int]:
+        return []
+
+
 class NoKeysTokenizer(BaseTokenizer):
     def handle_attr(self, key: str, value: int) -> List[int]:
         return []
@@ -147,13 +170,23 @@ class NoKeysTokenizer(BaseTokenizer):
 
 
 class TreeTokenizer:
-    def __init__(self, vocabs: List[Vocabulary], total=False, key_only=False, no_keys=False):
-        if no_keys:
-            self.node_tokenizer = NoKeysTokenizer(vocabs=vocabs, total=total)
-        elif key_only:
-            self.node_tokenizer = KeyOnlyTokenizer(vocabs=vocabs, total=total)
-        else:
+    def __init__(self, vocabs: List[Vocabulary], total=False, data_config='normal'):
+        if data_config == 'normal':
             self.node_tokenizer = BaseTokenizer(vocabs=vocabs, total=total)
+        elif data_config == "only_depth":
+            self.node_tokenizer = OnlyDepthTokenizer(vocabs=vocabs, total=total)
+        elif data_config == "no_keys":
+            self.node_tokenizer = NoKeysTokenizer(vocabs=vocabs, total=total)
+        elif data_config == "key_only":
+            self.node_tokenizer = KeyOnlyTokenizer(vocabs=vocabs, total=total)
+        elif data_config == "only_tag":
+            self.node_tokenizer = OnlyTagTokenizer(vocabs=vocabs, total=total)
+        elif data_config == "no_depth":
+            self.node_tokenizer = NoDepthTokenizer(vocabs=vocabs, total=total)
+        else:
+            print('Classifier.....messed up data_config: ', data_config)
+            raise Exception
+        self.vocabs = vocabs
 
     def __call__(self, tree: HtmlNode) -> List[List[int]]:
         return [self.node_tokenizer(node) for node in tree.path]

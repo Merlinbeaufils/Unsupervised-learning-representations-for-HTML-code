@@ -31,7 +31,7 @@ class BaseModel(LightningModule):
                  tree_model_type=None, optimizer_type='sgd',
                  batch_size=10, lr=1e-3, loss_type='cross_entropy',
                  similarity_type='cosine', embedding_dim=60,
-                 train_proportion=0.8, num_cpus=2):
+                 train_proportion=0.8, num_cpus=2, num_layers=6, nheads=8, transformer_config='last'):
         super().__init__()
         self.dataset = dataset
         self.tree_model_type = tree_model_type
@@ -42,6 +42,9 @@ class BaseModel(LightningModule):
         self.lr = lr
         self.loss_type = loss_type
         self.train_proportion = train_proportion
+        self.nheads = nheads
+        self.num_layers = num_layers
+        self.transformer_config = transformer_config
 
         self.embedding_dim = embedding_dim
         self.embedding = nn.Embedding(num_embeddings=vocab_size + MAX_DEPTH, embedding_dim=embedding_dim)
@@ -49,6 +52,7 @@ class BaseModel(LightningModule):
         self.similarity = self.configure_similarity()
         self.node_model = self.set_node_model()
         self.tree_model = self.set_tree_model()
+        self.mean_acc = [0, 0]
 
         self.train_loader, self.eval_loader, self.test_loader = \
             self.set_loaders(dataset, self.train_proportion, num_cpus)
@@ -87,6 +91,8 @@ class BaseModel(LightningModule):
 
         acc = accuracy(scores, labels)
         rec = recall(scores, labels, top_k=3)
+        self.mean_acc[0] += reps1.shape[0] * acc
+        self.mean_acc[1] += reps1.shape[0]
 
         self.log("val/loss", loss)
         self.log("val/acc", acc)
@@ -94,6 +100,11 @@ class BaseModel(LightningModule):
 
         print('Validation: ', acc)
         return loss  # CHANGE
+
+    def on_validation_epoch_end(self) -> None:
+        x = self.mean_acc[0] / self.mean_acc[1]
+        self.log('val/epoch_acc', x)
+        self.mean_acc = [0, 0]
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return self.train_loader
@@ -147,7 +158,10 @@ class BaseModel(LightningModule):
         elif name == 'lstm':
             node_model = SubModelLstm(FlatSumBow(self.embedding), hidden_size=self.embedding_dim)
         elif name == 'transformer':
-            node_model = SubModelTransformer(FlatSumBow(self.embedding), vocab_length=len(self.dataset.vocab))
+            seq_len = self.dataset[0][1].shape[0]
+            node_model = SubModelTransformer(FlatSumBow(self.embedding), embedding_dim=self.embedding_dim,
+                                             dropout=.5, nheads=self.nheads, num_layers=self.num_layers,
+                                             config=self.transformer_config, seq_len=seq_len)
         else:
             raise NoNodeModel
         return node_model
@@ -162,7 +176,9 @@ class BaseModel(LightningModule):
         elif name == 'lstm':
             tree_model = SubModelLstm(node_model, hidden_size=self.embedding_dim)
         elif name == 'transformer':
-            tree_model = SubModelTransformer(node_model, vocab_length=len(self.dataset.vocab))
+            seq_len = self.dataset.samples[0][0].shape[0]
+            tree_model = SubModelTransformer(node_model, seq_len=seq_len, embedding_dim=self.embedding_dim,
+                                             dropout=0.5, nheads=8, num_layers=6, config=self.transformer_config)
         else:
             raise NoTreeModel
         return tree_model

@@ -17,6 +17,7 @@ from project.pretraining_model_pipe import NoOptimizer, NoNodeModel
 
 MAX_DEPTH=40
 
+
 class TreeClassifier(LightningModule):
     """
         Takes in a pretrained tree encoder trained with contrastive learning.
@@ -32,19 +33,21 @@ class TreeClassifier(LightningModule):
         self.batch_size = batch_size
         self.lr = lr
 
+        print('loading model...')
+
+        # self.tree_model: nn.Module = self.set_model(model_path, model_config)
+
+        self.tree_model = torch.load(model_path)
+
         print('setting model params')
-        self.linear = nn.Linear(embedding_dim, 256)
+        self.linear = nn.Linear(self.tree_model.embedding_dim, 256)
         self.linear2 = nn.Linear(256, 128)
         self.linear3 = nn.Linear(128, self.num_labels)
         self.optimizer_type = optimizer_type
 
         self.train_loader, self.test_loader, self.eval_loader = self.set_loaders(dataset, ratio, num_cpus)
 
-        print('loading model...')
 
-        # self.tree_model: nn.Module = self.set_model(model_path, model_config)
-
-        self.tree_model = torch.load(model_path)
         # new_dict = {}
         # for key, val in checkpoint['state_dict'].items():
         #     if key.startswith('tree_model'):
@@ -92,7 +95,9 @@ class TreeClassifier(LightningModule):
         logits = self(features, 0)
         loss = F.cross_entropy(logits, labels.float())
 
-        acc = accuracy(logits, labels)
+        # acc = (torch.argmax(logits, dim=1) == torch.argmax(labels, dim=1)).float().mean()
+
+        acc = accuracy(logits, labels.argmax(dim=1))
 
         return loss, acc
 

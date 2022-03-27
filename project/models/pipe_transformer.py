@@ -11,14 +11,20 @@ class SubModelTransformer(nn.Module):
     Applies a sub-model at node level then inputs the node representations into the transformer.
     Currently, the node model is bow
     """
-    def __init__(self, node_model, vocab_length, embedding_dim=64, dropout : float = .5):
+    def __init__(self, node_model, seq_len, embedding_dim=64, dropout : float = .5, nheads=4,
+                 num_layers=2, config='last'):
         super().__init__()
         self.node_model = node_model
         self.pos_encoder = PositionalEncoding(d_model=embedding_dim, dropout=dropout)
-        encoder_layers = TransformerEncoderLayer(d_model=embedding_dim, nhead=8, dim_feedforward=embedding_dim, dropout=dropout)
-        self.transformer_encoder = TransformerEncoder(encoder_layers, num_layers=6)
+        encoder_layers = TransformerEncoderLayer(d_model=embedding_dim, nhead=nheads, dim_feedforward=embedding_dim, dropout=dropout)
+        self.transformer_encoder = TransformerEncoder(encoder_layers, num_layers=num_layers)  # COME BACK TO THIS
         # self.encoder = nn.Embedding(ntoken, d_model)
-        self.d_model = embedding_dim
+        self.embedding_dim = embedding_dim
+        self.seq_len = seq_len
+        self.config = config
+
+        if config == 'linear':
+            self.linear = nn.Linear(seq_len * embedding_dim, embedding_dim)
         # self.decoder = nn.Linear(d_model, ntoken)
 
     # def forward(self, trees) -> Tensor:
@@ -33,8 +39,17 @@ class SubModelTransformer(nn.Module):
         """
         tree_reps = self.node_model(trees, node=False)
         src = self.pos_encoder(tree_reps)
-        output = self.transformer_encoder(src)
-        return output[:, -1]
+        output = self.transformer_encoder(src)  # (batch_size, seq_len, embedding_dim)
+        if self.config == 'last':
+            new_output = output[:, -1]
+        elif self.config == 'mean':
+            new_output = torch.mean(output, dim=1)
+        elif self.config == 'linear':
+            flat_output = output.reshape(output.shape[0], -1)
+            new_output = self.linear(flat_output)
+        else:
+            raise WrongTransformerConfig
+        return new_output
 
 
 class PositionalEncoding(nn.Module):
@@ -57,3 +72,6 @@ class PositionalEncoding(nn.Module):
         """
         x = x + self.pe[:x.size(0)]
         return self.dropout(x)
+
+class WrongTransformerConfig(Exception):
+    pass
