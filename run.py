@@ -65,6 +65,7 @@ def reduce_trees(reduction: str, trees: List[HtmlNode], args: Namespace) -> None
         raise NoReduction
     for tree in trees:
         function(tree, **kwargs)
+    os.makedirs(args.setup_location + 'trees_pretrain', mode=0o777, exist_ok=True)
     pickle_dump(directory=args.setup_location + 'trees_pretrain/trees_short', item=trees)
     args.reduction_function = function
 
