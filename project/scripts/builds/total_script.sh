@@ -56,6 +56,17 @@ python  ./run.py \
 
 python  ./run.py \
 --folder_name final_feather \
+--skip_setup \
+--configuration transformer \
+--num_epochs 10 \
+--lr 1e-2 \
+--train_proportion 0.8 \
+--batch_size 64 \
+--embedding_dim 32 \
+--experiment_name large_run
+
+python  ./run.py \
+--folder_name final_feather \
 --framework finetune \
 --skip_setup \
 --configuration bow \
@@ -73,6 +84,18 @@ python  ./run.py \
 --configuration lstm \
 --num_epochs 10 \
 --lr 1 \
+--train_proportion 0.8 \
+--batch_size 64 \
+--embedding_dim 32 \
+--experiment_name large_run
+
+python  ./run.py \
+--folder_name final_feather \
+--framework finetune \
+--skip_setup \
+--configuration transformer \
+--num_epochs 10 \
+--lr 1e-2 \
 --train_proportion 0.8 \
 --batch_size 64 \
 --embedding_dim 32 \

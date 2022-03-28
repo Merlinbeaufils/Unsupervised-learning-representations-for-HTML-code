@@ -238,7 +238,7 @@ def main(args: Namespace) -> None:
         logger=[logger],
         max_epochs=args.num_epochs,
         enable_checkpointing=False,
-        log_every_n_steps=50,
+        log_every_n_steps=1,
         default_root_dir='res_and_ckpts/' + args.experiment_name + '/checkpoints/' + args.framework
     )
     trainer.fit(model)
