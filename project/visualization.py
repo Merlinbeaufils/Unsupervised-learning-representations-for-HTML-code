@@ -1,3 +1,4 @@
+import random
 from typing import List, Tuple
 
 import plotly
@@ -23,19 +24,21 @@ def display_pca_scatterplot_3D(model, samples: pandas.DataFrame, user_input=None
     trees_tensor = Tensor(trees)
     tree_vectors = model.tree_model(trees_tensor).detach().numpy()
 
-    three_dim = PCA(random_state=0).fit_transform(tree_vectors)[:, :2]
+    three_dim = PCA(random_state=0).fit_transform(tree_vectors)[:, :3]
     # For 2D, change the three_dim variable into something like two_dim like the following:
     # two_dim = PCA(random_state=0).fit_transform(word_vectors)[:,:2]
 
     data = []
     count = 0
-    for i, website in enumerate(websites):
+    sam, kn = random.sample(range(100), 5), 5
+    # for i, website in enumerate(websites):
+    for i in sam:
         trace = go.Scatter3d(
-            x=three_dim[i:i+1, 0],
-            y=three_dim[i:i+1, 1],
-            z=three_dim[i:i+1, 2],
+            x=three_dim[i:i+kn, 0],
+            y=three_dim[i:i+kn, 1],
+            z=three_dim[i:i+kn, 2],
             text=tld[i],
-            name=website[-20:],
+            name=websites[i][-20:],
             textposition="top center",
             textfont_size=20,
             mode='markers+text',
@@ -109,13 +112,16 @@ def display_pca_scatterplot_3D_vocab(model, words: List[str], vocab: Vocabulary)
     three_dim = PCA(random_state=0).fit_transform(word_vectors)[:, :2]
 
     data = []
-    for i, word in enumerate(words):
+    sam = random.sample(range(100),5)
+    kn = 5
+    #for i, word in enumerate(words):
+    for i in sam:
         trace = go.Scatter3d(
-            x=three_dim[i:i+1, 0],
-            y=three_dim[i:i+1, 1],
-            z=three_dim[i:i+1, 2],
-            text=word[-20:],
-            name=word[-20:],
+            x=three_dim[i:i+kn, 0],
+            y=three_dim[i:i+kn, 1],
+            z=three_dim[i:i+kn, 2],
+            text=words[i][-20:],
+            name=words[i][-20:],
             textposition="top center",
             textfont_size=20,
             mode='markers+text',
@@ -155,7 +161,7 @@ def display_pca_scatterplot_3D_vocab(model, words: List[str], vocab: Vocabulary)
 
 if __name__ == '__main__':
     skip = 1
-    stop = 1
+    stop = 0
     vocab = 0
     model_path = 'res_and_ckpts/base_small/checkpoints/pretrain/lstm.ckpt'
     df_path = 'data/updated_feather/dataframe'
@@ -186,7 +192,7 @@ if __name__ == '__main__':
 
 
     else:
-        model_path = 'res_and_ckpts/transformer_attempts/checkpoints/pretrain/transformer.ckpt'
+        model_path = 'res_and_ckpts/base_normal/checkpoints/pretrain/lstm.ckpt'
         df_path = 'data/updated_feather/dataframe'
         if not skip:
             print('loading model...')

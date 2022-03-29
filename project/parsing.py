@@ -13,7 +13,7 @@ sep_token = ")*&&SEPARATION)*&&"
 dont_handle_data = ['script', 'style']
 do_handle_data = ['p', 'span', 'br', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'blockquote', 'q',
                   'li', 'dt', 'dd', 'mark', 'ins', 'del', 'sup', 'sub', 'small', 'i', 'b']
-current_amount_of_pickled_trees = 28924
+# current_amount_of_pickled_trees = 28924
 
 void_tags = ["area", "base", "br", "col", "command", "embed", "hr", "img", "input", "keygen", "link", "meta", "param",
              "source", "track", "wbr"]

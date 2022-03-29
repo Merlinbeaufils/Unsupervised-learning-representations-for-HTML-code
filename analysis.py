@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import numpy as np
+import pandas
 from matplotlib import pyplot as plt
 
 from project.frequency import *
@@ -59,18 +61,47 @@ class DataParser(HTMLParser):
 
 
 def analyze_frequency():
-    tag_freq = pickle_load('./data/final_feather/frequency_dict_pretrain/tags_freq')
-    # key_freq = pickle_load('./data/final_feather/frequency_dict_pretrain/key_freq')
-    # node_freq = pickle_load('./data/final_feather/frequency_dict_pretrain/node_freq')
-    # depth_freq = pickle_load('./data/final_feather/frequency_dict_pretrain/depth_freq')
-    # value_freq = pickle_load('./data/final_feather/frequency_dict_pretrain/value_freq')
-    # total_freq = pickle_load('./data/final_feather/frequency_dict_pretrain/total_freq')
-    plot = sns.displot(tag_freq.values(), bins=152, log_scale=True)
+    tag_freq = pickle_load('./data/large/frequency_dict_pretrain/tags_freq')
+    key_freq = pickle_load('./data/large/frequency_dict_pretrain/key_freq')
+    node_freq = pickle_load('./data/large/frequency_dict_pretrain/node_freq')
+    depth_freq = pickle_load('./data/large/frequency_dict_pretrain/depth_freq')
+    value_freq = pickle_load('./data/large/frequency_dict_pretrain/values_freq')
+    total_freq = pickle_load('./data/large/frequency_dict_pretrain/total_freq')
+    # df = pandas.DataFrame()
+    # df['Frequency'] = tag_freq.values()
+    depth_temp = {key: value for key, value in depth_freq.items() if value > 100}
+    plot = sns.displot(y=depth_temp.values(), x=np.arange(len(depth_temp)), bins=30)
+    plot.savefig('freq_depth.png')
+
+    tag_temp = {key: value for key, value in tag_freq.items() if value > 100}
+    plot = sns.displot(y=tag_temp.values(), x=np.arange(len(tag_temp)), bins=30, log_scale=(False, True))
     plot.savefig('freq_tag.png')
-    plt.bar(tag_freq.keys(), tag_freq.values())
-    plt.yscale('log')
-    plt.plot()
-    plt.savefig('./tag_frequency.png')
+
+    key_temp = {key: value for key, value in key_freq.items() if value > 100}
+    plot = sns.displot(y=key_temp.values(), x=np.arange(len(key_temp)), bins=30, log_scale=(False, True))
+    plot.savefig('freq_key.png')
+
+    node_temp = {key: value for key, value in node_freq.items() if value > 100}
+    plot = sns.displot(y=node_temp.values(), x=np.arange(len(node_temp)), bins=30, log_scale=(False, True))
+    plot.savefig('freq_node.png')
+
+    value_temp = {key: value for key, value in value_freq.items() if value > 100}
+    plot = sns.displot(y=value_temp.values(), x=np.arange(len(value_temp)), bins=30, log_scale=(False, True))
+    plot.savefig('freq_value.png')
+
+    total_temp = {key: value for key, value in total_freq.items() if value > 100}
+    plot = sns.displot(y=total_temp.values(), x=np.arange(len(total_temp)), bins=30, log_scale=(False, True))
+    plot.savefig('freq_total.png')
+
+
+
+    # plt.hist(df['Frequency'], bins=50)
+    # plt.yscale = 'log'
+    # plt.savefig('freq_tag2.png')
+    # plt.bar(tag_freq.keys(), tag_freq.values())
+    # plt.yscale('log')
+    # plt.plot()
+    # plt.savefig('./tag_frequency.png')
 
 
 analyze_frequency()

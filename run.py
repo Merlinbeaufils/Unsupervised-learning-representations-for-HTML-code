@@ -274,7 +274,7 @@ if __name__ == "__main__":
     parser.add_argument('--build_trees', action='store_true')
     parser.add_argument('--total_file_setup', action='store_true')
     parser.add_argument('--sampling', type=str, default='all')
-    parser.add_argument('--indexes_size', type=int, default=10_000)
+    parser.add_argument('--indexes_size', type=int, default=40_000)
     parser.add_argument('--train_length', type=int, default=400)
     parser.add_argument('--test_length', type=int, default=100)
     parser.add_argument('--train_proportion', type=float, default=0.8)
