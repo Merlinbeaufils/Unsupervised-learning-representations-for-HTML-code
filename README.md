@@ -71,12 +71,15 @@ it using the vocabulary. Adding len(vocabulary) to the depth value.
 ## Modeling approach
 
 We use a masked language modeling framework.
+Once we have masked our input sample into a 
+context and label, we run them through their 
+respective models and calculate our loss as see below.
 
 
 tokenized_contexts are of shape (batch_size, tree_size, node_size)
+tokenized_labels are also of shape (batch_size, tree_size, node_size)
 
-tokenized_labels can be of shape (batch_size, node_size) or the same shape
-depending on whether it is just a node or subtree.
+The models return one embedded vector for each context and label in the batch.
 
     context_reps = context_model(tokenized_contexts)    #(batch_size, embedding_dim) 
     label_reps   = label_model(tokenized_labels)      #(batch_size, embedding_dim)
@@ -104,74 +107,125 @@ trees and using end of node and start of node tags.
 - Does not use above framework.
 
 
-## Improvement flow:
+[//]: # (## Improvement flow:)
 
-#### Basic bow:
-- Baseline idea. 
-- no use of data yet.
-- poor accuracy.
+[//]: # ()
+[//]: # (#### Basic bow:)
 
-#### tree_reduction
-- randomnly drop subtrees until tree is of usable length.
-- drop all subtrees of too high depth.
-- slight improvement.
+[//]: # (- Baseline idea. )
 
-#### lstm
-- learn sequential aspect of trees
-- larger improvement. 
+[//]: # (- no use of data yet.)
 
-#### representations
-- embedding_dim
-- nodes or full subtrees
-- random node masking or full subtrees
-- improvement?
+[//]: # (- poor accuracy.)
 
-#### 1d-cnn, deepwalk, transformer
-- significant improvements
+[//]: # ()
+[//]: # (#### tree_reduction)
 
-#### include data
-- after good way of including data hopefully good accurary.
+[//]: # (- randomnly drop subtrees until tree is of usable length.)
 
+[//]: # (- drop all subtrees of too high depth.)
 
-## TODO
-- Document code well
-- Get Data and clean new data
-- Include node data attribute
-- reduction techniques
-- evaluation task
-- Send first real experiment.
+[//]: # (- slight improvement.)
 
-# ignone rest of readme
+[//]: # ()
+[//]: # (#### lstm)
 
-## Analysis of tags, attributes and content
-#### Build files and word count
-Use frequency.buildfiles to build the text files of tags, attributes and data.
+[//]: # (- learn sequential aspect of trees)
 
-You can then make a word count dictionary of each of these using
-word_count('tag_file.txt','tag_file_pickled') for example and it will pickle
-the dictionary into the file so you can then delete the word files and keep only the counts
+[//]: # (- larger improvement. )
 
-#### Analyze
-use frequency.analyze to analyze the results. if the pickled file is already 
-built, specify pikl=1. Also specify a frequency floor to be sisplayed and the scale.
+[//]: # ()
+[//]: # (#### representations)
 
+[//]: # (- embedding_dim)
 
+[//]: # (- nodes or full subtrees)
 
-### Traversal
-used this algorithm to traverse tree bottom up
-https://www.geeksforgeeks.org/bottom-up-traversal-of-a-trie/
+[//]: # (- random node masking or full subtrees)
 
+[//]: # (- improvement?)
 
-### dataloading 2 versus dataloading 
-Uses a sparsing function to reduce tree size
+[//]: # ()
+[//]: # (#### 1d-cnn, deepwalk, transformer)
 
-### frequency 2 versus frequency
-Gets rid of attributes
-implements use of Namespace
+[//]: # (- significant improvements)
 
-### for masked language modeling
-https://towardsdatascience.com/masked-language-modelling-with-bert-7d49793e5d2c
-https://towardsdatascience.com/from-pre-trained-word-embeddings-to-pre-trained-language-models-focus-on-bert-343815627598
-https://github.com/gucci-j/light-transformer-emnlp2021/blob/master/src/model/model.py
-https://huggingface.co/transformers/v3.3.1/_modules/transformers/modeling_auto.html
-https://cloudacademy.com/course/convolutional-neural-networks/images-as-tensors/
+[//]: # ()
+[//]: # (#### include data)
+
+[//]: # (- after good way of including data hopefully good accurary.)
+
+[//]: # ()
+[//]: # ()
+[//]: # (## To Do)
+
+[//]: # (- Document code well)
+
+[//]: # (- Get Data and clean new data)
+
+[//]: # (- Include node data attribute)
+
+[//]: # (- reduction techniques)
+
+[//]: # (- evaluation task)
+
+[//]: # (- Send first real experiment.)
+
+[//]: # ()
+[//]: # (# ignone rest of readme)
+
+[//]: # ()
+[//]: # (## Analysis of tags, attributes and content)
+
+[//]: # (#### Build files and word count)
+
+[//]: # (Use frequency.buildfiles to build the text files of tags, attributes and data.)
+
+[//]: # ()
+[//]: # (You can then make a word count dictionary of each of these using)
+
+[//]: # (word_count&#40;'tag_file.txt','tag_file_pickled'&#41; for example and it will pickle)
+
+[//]: # (the dictionary into the file so you can then delete the word files and keep only the counts)
+
+[//]: # ()
+[//]: # (#### Analyze)
+
+[//]: # (use frequency.analyze to analyze the results. if the pickled file is already )
+
+[//]: # (built, specify pikl=1. Also specify a frequency floor to be sisplayed and the scale.)
+
+[//]: # ()
+[//]: # ()
+[//]: # ()
+[//]: # (### Traversal)
+
+[//]: # (used this algorithm to traverse tree bottom up)
+
+[//]: # (https://www.geeksforgeeks.org/bottom-up-traversal-of-a-trie/)
+
+[//]: # ()
+[//]: # ()
+[//]: # (### dataloading 2 versus dataloading )
+
+[//]: # (Uses a sparsing function to reduce tree size)
+
+[//]: # ()
+[//]: # (### frequency 2 versus frequency)
+
+[//]: # (Gets rid of attributes)
+
+[//]: # (implements use of Namespace)
+
+[//]: # ()
+[//]: # (### for masked language modeling)
+
+[//]: # (https://towardsdatascience.com/masked-language-modelling-with-bert-7d49793e5d2c)
+
+[//]: # (https://towardsdatascience.com/from-pre-trained-word-embeddings-to-pre-trained-language-models-focus-on-bert-343815627598)
+
+[//]: # (https://github.com/gucci-j/light-transformer-emnlp2021/blob/master/src/model/model.py)
+
+[//]: # (https://huggingface.co/transformers/v3.3.1/_modules/transformers/modeling_auto.html)
+
+[//]: # (https://cloudacademy.com/course/convolutional-neural-networks/images-as-tensors/)
