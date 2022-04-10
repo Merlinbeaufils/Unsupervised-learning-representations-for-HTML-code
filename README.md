@@ -35,12 +35,15 @@ of a user clicking on a website if shown after a search, similar to a ranking al
 
 I have used self-supervised contrastive learning to train vector representations of html files in a masked language modeling framework. We first turn a html byte string into a HtmlNode class in the project.parsing module. We then tokenize this tree into a 2-dimensional tensor in the project.tree-tokenizer module. We define our pytorch dataset class to handle a list of trees and build samples given a configuration in the project.dataloading module. Finally we use a pipeline of different types of models easily implemented by the torch and pytorch lightning modules inside the project.models folder.
 
-Here are the embeddings learned by the model:
+Here is a pca representation of the embeddings learned by the lstm model on untouched data:
+![3d PCA file embeddings](/images/temp_finetune_3d.png)
 
 
 When running the run.py module, tree-size, batch-size and dozens more training specs can be specified.
 
 We then implement the finetuning task of guessing the top-level-domain of a website through a classifier. 
+As we see from the embeddings above, the files are clearly clustered by their top level domains and the classifier should be able to easily separate this space.
+
 
 
 ## Data and data formatting
@@ -54,26 +57,29 @@ in the tree, its tag, its attributes as a list of (key, value)
 tuples, and its data. It also keeps track of its father 
 node and list of children nodes.
 
+
 2) We then deterministically turn the tree into a list using a 
 post-order traversal. Using the depth value of each node, the original
 tree can easily be recovered.
 
-### Tokenizing the trees into samples
-1) We combine the tags, data and the keys, and values from attributes
-as a total vocabulary.
+
+
+![code to list conversion example](/images/node_to_sequence.png)
+
+### Tokenizing the traversals
+1) We combine the tags, keys, and values of the html elements as a total vocabulary.
 
 2) We tokenize the trees as a list of tokenized nodes determined 
-by its post-order traversal.
+by its post-order traversal as seen before and then tokenize the html elements as a sequence of the indices of their tag, keys and values and depth.
 
-3) Representing each node as a list
-[depth, tag, key, value, key, value,..., key, value, data] we tokenize
-it using the vocabulary. Adding len(vocabulary) to the depth value.
 
-4) I am still in the process of effectively representing the data.
+![tree to sequence example](/images/tree_to_sequence.png)
+
 
 ## Modeling approach
 
-We use a masked language modeling framework.
+We use a masked language modeling framework. 
+We mask out an entire subtree of our original html files to build our context and label.
 Once we have masked our input sample into a 
 context and label, we run them through their 
 respective models and calculate our loss as see below.
@@ -94,7 +100,7 @@ The models return one embedded vector for each context and label in the batch.
 ### Models configurations
 Currently three functioning configurations: bow, lstm, transformer
 
-#### BOW configuration ~ __baseline to compare with__:
+#### BOW configuration ~ __strong baseline to compare with__:
 - context_model and label_model are the same.
 - simple embedding layer flattening the 2-d tree arrays and summing
 all vector embeddings. Ignoring padding.
