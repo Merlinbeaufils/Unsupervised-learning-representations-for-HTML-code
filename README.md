@@ -35,6 +35,9 @@ of a user clicking on a website if shown after a search, similar to a ranking al
 
 I have used self-supervised contrastive learning to train vector representations of html files in a masked language modeling framework. We first turn a html byte string into a HtmlNode class in the project.parsing module. We then tokenize this tree into a 2-dimensional tensor in the project.tree-tokenizer module. We define our pytorch dataset class to handle a list of trees and build samples given a configuration in the project.dataloading module. Finally we use a pipeline of different types of models easily implemented by the torch and pytorch lightning modules inside the project.models folder.
 
+Here are the embeddings learned by the model:
+
+
 When running the run.py module, tree-size, batch-size and dozens more training specs can be specified.
 
 We then implement the finetuning task of guessing the top-level-domain of a website through a classifier. 
@@ -100,11 +103,13 @@ all vector embeddings. Ignoring padding.
 - lstm over node representations with a submodel creating nodes
 - currently treats nodes as a bow as there is no sequencial logic
 to their tokenized representations.
+- returns final hidden state.
 
 #### Transformer ~ __final endeavor__:
-- implements positional embeddings by flattening the 2-d 
-trees and using end of node and start of node tags.
-- Does not use above framework.
+- implements positional embedding.
+- flattens lower level through bow just like lstm above.
+- Can either return mean of outputs, final output or we can apply a 
+linear layer to the entire output.
 
 
 [//]: # (## Improvement flow:)
