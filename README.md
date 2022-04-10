@@ -1,24 +1,23 @@
 # Thesis
 ### Learning vector representations of websites
-Dependencies: pandas, pytorch_lightning, scikit_learn
+Dependencies: pandas, pytorch_lightning, sklearn, torch, seaborn
 ## Structure of repository:
-- __data folder__ - contains different data repos
-- __project__ - folder contains coding modules
-- __run.py__ - trains models with specific configurations specified configurations
+- __data__ - contains different data repos. The final one is the final_feather data folder.
+- __project__ - folder contains coding modules, different model implementations and running scripts
+- __run.py__ - trains models with specific configurations specified in a script
 - __res_and_ckpts__ - contains logs and ckpt files for 
 tensorboard and loading models
-- The __jupyter notebook__ - is for circumventing certain 
-environment limitations of my local machine.
 
-## Scripts
-Set num_gpus, num_cpus, chdir depending on local environment
+## Scripts (for running immediately)
 
 - bow_basic_run.sh trains a bow model
 - lstm_basic_run.sh trains a lstm model
 - transformer_basic_run.sh trains a transformer model
 
+You will probably need to configure a script adapted to your machine and goal.
+
 ### Description
-I will investigate techniques to learn representations of websites. In particular, I will use self-supervised learning to train models using NLP algorithms (like masked language modeling) to learn vector
+<!-- I will investigate techniques to learn representations of websites. In particular, I will use self-supervised learning to train models using NLP algorithms (like masked language modeling) to learn vector
 representations. These representations should hold sufficient information to use them for several
 downstream tasks, including e.g., analytics and prediction problems.
 The first research step will consist of defining the format of the data to be input into the model, to define
@@ -32,10 +31,18 @@ websites (or parts thereof) to the vector representation output by the encoder.
 Generating and evaluating this complete and informative website space will consist of the bulk of the thesis.
 Finally, I will explore downstream uses of the space. While these are infinite, two uses I am particularly interested in
 exploring are a next webpage predictor given a current browsing sequence and a click predictor evaluating the probability
-of a user clicking on a website if shown after a search, similar to a ranking algorithm.
+of a user clicking on a website if shown after a search, similar to a ranking algorithm. -->
+
+I have used self-supervised contrastive learning to train vector representations of html files in a masked language modeling framework. We first turn a html byte string into a HtmlNode class in the project.parsing module. We then tokenize this tree into a 2-dimensional tensor in the project.tree-tokenizer module. We define our pytorch dataset class to handle a list of trees and build samples given a configuration in the project.dataloading module. Finally we use a pipeline of different types of models easily implemented by the torch and pytorch lightning modules inside the project.models folder.
+
+When running the run.py module, tree-size, batch-size and dozens more training specs can be specified.
+
+We then implement the finetuning task of guessing the top-level-domain of a website through a classifier. 
+
 
 ## Data and data formatting
-common_sites folder html files of the 10 most used websites
+Download the final_pretrain_data. as a pandas file set it in the ./data/final_feather directory. Running the code will generate: vocabs, frequency_dict, dataloaders and text_files folders containing different steps of the data processing for future user analysis.
+
 
 ### Data representation:
 1) Websites are turned from html strings into trees. Each 
@@ -76,7 +83,7 @@ depending on whether it is just a node or subtree.
     scores       = node_reps @ tree_reps.T           #(batch_size, batch_size)
     labels       = [0 ... batch_size]                #(batch_size)
     loss         = cross_entropy_loss(scores, labels)#(0)
-
+    
 
 ### Models configurations
 Currently three functioning configurations: bow, lstm, transformer
